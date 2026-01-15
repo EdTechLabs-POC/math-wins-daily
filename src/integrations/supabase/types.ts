@@ -331,7 +331,42 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      question_bank_safe: {
+        Row: {
+          created_at: string | null
+          difficulty: Database["public"]["Enums"]["difficulty_level"] | null
+          id: string | null
+          options: Json | null
+          question_data: Json | null
+          question_text: string | null
+          question_type: Database["public"]["Enums"]["question_type"] | null
+          topic: string | null
+          usage_count: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"] | null
+          id?: string | null
+          options?: Json | null
+          question_data?: Json | null
+          question_text?: string | null
+          question_type?: Database["public"]["Enums"]["question_type"] | null
+          topic?: string | null
+          usage_count?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"] | null
+          id?: string | null
+          options?: Json | null
+          question_data?: Json | null
+          question_text?: string | null
+          question_type?: Database["public"]["Enums"]["question_type"] | null
+          topic?: string | null
+          usage_count?: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
