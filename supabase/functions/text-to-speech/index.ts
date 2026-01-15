@@ -1,9 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Allowed ElevenLabs voice IDs
+const ALLOWED_VOICE_IDS = [
+  "EXAVITQu4vr4xnSDxMaL", // Sarah - default
+  "21m00Tcm4TlvDq8ikWAM", // Rachel
+  "AZnzlk1XvdvUeBnXmlld", // Domi
+  "MF3mGyEYCl7XYWbV9V6O", // Elli
+  "TxGEqnHWrfWFTfGW9XjX", // Josh
+  "VR6AewLTigWG4xSOukaG", // Arnold
+  "pNInz6obpgDQGcFmaJgB", // Adam
+  "yoZ06aMxZJJ28mfd3POQ", // Sam
+];
+
+const MAX_TEXT_LENGTH = 1000; // Reasonable limit for educational TTS
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -11,18 +26,75 @@ serve(async (req) => {
   }
 
   try {
-    const { text, voiceId = "EXAVITQu4vr4xnSDxMaL" } = await req.json();
-    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
+    // Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      console.error("Missing authorization header");
+      return new Response(
+        JSON.stringify({ error: "Missing authorization" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.error("Unauthorized request:", authError?.message);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Parse and validate input
+    const body = await req.json();
+    const { text, voiceId = "EXAVITQu4vr4xnSDxMaL" } = body;
+
+    // Validate text
+    if (!text || typeof text !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Valid text is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Text cannot be empty" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (trimmedText.length > MAX_TEXT_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Text must be ${MAX_TEXT_LENGTH} characters or less` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate voiceId
+    if (!ALLOWED_VOICE_IDS.includes(voiceId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid voice ID" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Sanitize text (remove potentially harmful characters)
+    const sanitizedText = trimmedText.replace(/[<>]/g, "");
+
+    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
     if (!ELEVENLABS_API_KEY) {
       throw new Error("ELEVENLABS_API_KEY not configured");
     }
 
-    if (!text) {
-      throw new Error("Text is required");
-    }
-
-    console.log(`Generating TTS for: "${text.substring(0, 50)}..."`);
+    console.log(`User ${user.id} generating TTS for: "${sanitizedText.substring(0, 50)}..."`);
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
@@ -33,7 +105,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text,
+          text: sanitizedText,
           model_id: "eleven_turbo_v2_5",
           voice_settings: {
             stability: 0.6,
