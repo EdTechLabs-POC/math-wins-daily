@@ -14,7 +14,321 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      daily_reports: {
+        Row: {
+          clicked_dashboard: boolean | null
+          days_to_close_gaps: number | null
+          id: string
+          improvements: Json | null
+          needs_help: boolean | null
+          next_focus: Json | null
+          opened_at: string | null
+          report_date: string | null
+          report_html: string | null
+          sent_at: string | null
+          session_id: string | null
+          shaky_areas: Json | null
+          student_id: string
+        }
+        Insert: {
+          clicked_dashboard?: boolean | null
+          days_to_close_gaps?: number | null
+          id?: string
+          improvements?: Json | null
+          needs_help?: boolean | null
+          next_focus?: Json | null
+          opened_at?: string | null
+          report_date?: string | null
+          report_html?: string | null
+          sent_at?: string | null
+          session_id?: string | null
+          shaky_areas?: Json | null
+          student_id: string
+        }
+        Update: {
+          clicked_dashboard?: boolean | null
+          days_to_close_gaps?: number | null
+          id?: string
+          improvements?: Json | null
+          needs_help?: boolean | null
+          next_focus?: Json | null
+          opened_at?: string | null
+          report_date?: string | null
+          report_html?: string | null
+          sent_at?: string | null
+          session_id?: string | null
+          shaky_areas?: Json | null
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_reports_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "practice_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reports_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diagnostic_attempts: {
+        Row: {
+          attempt_number: number | null
+          correct_answer: Json
+          diagnostic_id: string
+          id: string
+          is_correct: boolean | null
+          question_data: Json
+          student_answer: Json | null
+          task_id: string
+          time_taken_seconds: number | null
+          timestamp: string | null
+        }
+        Insert: {
+          attempt_number?: number | null
+          correct_answer: Json
+          diagnostic_id: string
+          id?: string
+          is_correct?: boolean | null
+          question_data: Json
+          student_answer?: Json | null
+          task_id: string
+          time_taken_seconds?: number | null
+          timestamp?: string | null
+        }
+        Update: {
+          attempt_number?: number | null
+          correct_answer?: Json
+          diagnostic_id?: string
+          id?: string
+          is_correct?: boolean | null
+          question_data?: Json
+          student_answer?: Json | null
+          task_id?: string
+          time_taken_seconds?: number | null
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diagnostic_attempts_diagnostic_id_fkey"
+            columns: ["diagnostic_id"]
+            isOneToOne: false
+            referencedRelation: "diagnostics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diagnostics: {
+        Row: {
+          completed_at: string | null
+          gaps_identified: Json | null
+          id: string
+          level: Database["public"]["Enums"]["diagnostic_level"]
+          needs_extra_support: boolean | null
+          repair_attempts: number | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["diagnostic_status"] | null
+          strengths: Json | null
+          student_id: string
+          time_taken_seconds: number | null
+          total_correct: number | null
+          total_questions: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          gaps_identified?: Json | null
+          id?: string
+          level: Database["public"]["Enums"]["diagnostic_level"]
+          needs_extra_support?: boolean | null
+          repair_attempts?: number | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["diagnostic_status"] | null
+          strengths?: Json | null
+          student_id: string
+          time_taken_seconds?: number | null
+          total_correct?: number | null
+          total_questions?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          gaps_identified?: Json | null
+          id?: string
+          level?: Database["public"]["Enums"]["diagnostic_level"]
+          needs_extra_support?: boolean | null
+          repair_attempts?: number | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["diagnostic_status"] | null
+          strengths?: Json | null
+          student_id?: string
+          time_taken_seconds?: number | null
+          total_correct?: number | null
+          total_questions?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diagnostics_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_sessions: {
+        Row: {
+          completed_at: string | null
+          completion_rate: number | null
+          confidence_scores: Json | null
+          duration_seconds: number | null
+          hints_requested: number | null
+          id: string
+          reflection_emoji: string | null
+          reflection_text: string | null
+          session_date: string | null
+          session_number: number | null
+          started_at: string | null
+          stretch_questions: Json | null
+          student_id: string
+          total_attempts: number | null
+          warmup_questions: Json | null
+        }
+        Insert: {
+          completed_at?: string | null
+          completion_rate?: number | null
+          confidence_scores?: Json | null
+          duration_seconds?: number | null
+          hints_requested?: number | null
+          id?: string
+          reflection_emoji?: string | null
+          reflection_text?: string | null
+          session_date?: string | null
+          session_number?: number | null
+          started_at?: string | null
+          stretch_questions?: Json | null
+          student_id: string
+          total_attempts?: number | null
+          warmup_questions?: Json | null
+        }
+        Update: {
+          completed_at?: string | null
+          completion_rate?: number | null
+          confidence_scores?: Json | null
+          duration_seconds?: number | null
+          hints_requested?: number | null
+          id?: string
+          reflection_emoji?: string | null
+          reflection_text?: string | null
+          session_date?: string | null
+          session_number?: number | null
+          started_at?: string | null
+          stretch_questions?: Json | null
+          student_id?: string
+          total_attempts?: number | null
+          warmup_questions?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_sessions_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      question_bank: {
+        Row: {
+          common_mistake: string | null
+          correct_answer: Json
+          created_at: string | null
+          difficulty: Database["public"]["Enums"]["difficulty_level"]
+          hint: string | null
+          id: string
+          options: Json | null
+          question_data: Json
+          question_text: string
+          question_type: Database["public"]["Enums"]["question_type"]
+          topic: string
+          usage_count: number | null
+          worked_example: string | null
+        }
+        Insert: {
+          common_mistake?: string | null
+          correct_answer: Json
+          created_at?: string | null
+          difficulty: Database["public"]["Enums"]["difficulty_level"]
+          hint?: string | null
+          id: string
+          options?: Json | null
+          question_data: Json
+          question_text: string
+          question_type: Database["public"]["Enums"]["question_type"]
+          topic: string
+          usage_count?: number | null
+          worked_example?: string | null
+        }
+        Update: {
+          common_mistake?: string | null
+          correct_answer?: Json
+          created_at?: string | null
+          difficulty?: Database["public"]["Enums"]["difficulty_level"]
+          hint?: string | null
+          id?: string
+          options?: Json | null
+          question_data?: Json
+          question_text?: string
+          question_type?: Database["public"]["Enums"]["question_type"]
+          topic?: string
+          usage_count?: number | null
+          worked_example?: string | null
+        }
+        Relationships: []
+      }
+      students: {
+        Row: {
+          age: number | null
+          cohort: string | null
+          created_at: string | null
+          current_level: Database["public"]["Enums"]["diagnostic_level"] | null
+          diagnostic_completed_at: string | null
+          id: string
+          name: string
+          parent_email: string
+          parent_name: string | null
+          user_id: string | null
+        }
+        Insert: {
+          age?: number | null
+          cohort?: string | null
+          created_at?: string | null
+          current_level?: Database["public"]["Enums"]["diagnostic_level"] | null
+          diagnostic_completed_at?: string | null
+          id?: string
+          name: string
+          parent_email: string
+          parent_name?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          age?: number | null
+          cohort?: string | null
+          created_at?: string | null
+          current_level?: Database["public"]["Enums"]["diagnostic_level"] | null
+          diagnostic_completed_at?: string | null
+          id?: string
+          name?: string
+          parent_email?: string
+          parent_name?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +337,15 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      diagnostic_level: "level_1" | "level_2"
+      diagnostic_status: "in_progress" | "completed" | "needs_repair"
+      difficulty_level: "foundation" | "core" | "challenge"
+      question_type:
+        | "multiple_choice"
+        | "tap_count"
+        | "drag_drop"
+        | "fill_blank"
+        | "word_problem"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +472,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      diagnostic_level: ["level_1", "level_2"],
+      diagnostic_status: ["in_progress", "completed", "needs_repair"],
+      difficulty_level: ["foundation", "core", "challenge"],
+      question_type: [
+        "multiple_choice",
+        "tap_count",
+        "drag_drop",
+        "fill_blank",
+        "word_problem",
+      ],
+    },
   },
 } as const
