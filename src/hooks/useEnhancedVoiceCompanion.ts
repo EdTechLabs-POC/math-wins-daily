@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface UseEnhancedVoiceCompanionOptions {
   enabled?: boolean;
   onSpeakStart?: () => void;
   onSpeakEnd?: () => void;
+  onError?: (error: string) => void;
 }
 
 // Rich variations for correct answers - dopamine-inducing phrases
@@ -76,17 +78,24 @@ const MID_SESSION_ENCOURAGEMENTS = [
   "Look at you go! You're becoming a math expert!",
 ];
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 1000;
+
 export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOptions = {}) {
-  const { enabled = true, onSpeakStart, onSpeakEnd } = options;
+  const { enabled = true, onSpeakStart, onSpeakEnd, onError } = options;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [retryAfter, setRetryAfter] = useState<number | null>(null);
 
   type QueueItem = {
     runId: number;
     text: string;
     resolve: () => void;
     reject: (err: Error) => void;
+    retryCount?: number;
   };
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -95,10 +104,10 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   const lastSpokenTextRef = useRef<string | null>(null);
 
   // Each stop() increments runId and aborts any in-flight request.
-  // This prevents a previous question from "finishing" and playing audio after the UI has moved on.
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const forceResolvePlaybackRef = useRef<(() => void) | null>(null);
+  const rateLimitResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -115,9 +124,49 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         audioRef.current = null;
       }
 
+      if (rateLimitResetTimerRef.current) {
+        clearTimeout(rateLimitResetTimerRef.current);
+      }
+
       queueRef.current.forEach(item => item.resolve());
       queueRef.current = [];
     };
+  }, []);
+
+  const handleError = useCallback((errorMessage: string, showToast = true) => {
+    setError(errorMessage);
+    onError?.(errorMessage);
+    if (showToast) {
+      toast.error('Voice unavailable', {
+        description: errorMessage,
+        duration: 5000,
+      });
+    }
+  }, [onError]);
+
+  const handleRateLimit = useCallback((retryAfterSeconds: number) => {
+    setIsRateLimited(true);
+    setRetryAfter(retryAfterSeconds);
+
+    // Clear any existing timer
+    if (rateLimitResetTimerRef.current) {
+      clearTimeout(rateLimitResetTimerRef.current);
+    }
+
+    // Auto-reset rate limit status after the retry period
+    rateLimitResetTimerRef.current = setTimeout(() => {
+      setIsRateLimited(false);
+      setRetryAfter(null);
+      toast.success('Voice is back!', {
+        description: 'You can use voice features again.',
+        duration: 3000,
+      });
+    }, retryAfterSeconds * 1000);
+
+    toast.warning('Voice temporarily paused', {
+      description: `Too many requests. Voice will resume in ${Math.ceil(retryAfterSeconds / 60)} minute(s).`,
+      duration: 8000,
+    });
   }, []);
 
   const processQueue = useCallback(async () => {
@@ -134,6 +183,15 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
           item.resolve();
           continue;
         }
+
+        // Skip if currently rate limited
+        if (isRateLimited) {
+          console.log('TTS rate limited, skipping:', item.text.substring(0, 30));
+          item.resolve();
+          continue;
+        }
+
+        const retryCount = item.retryCount || 0;
 
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -172,9 +230,36 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
             continue;
           }
 
+          // Handle rate limiting (429)
+          if (response.status === 429) {
+            const retryAfterHeader = response.headers.get('Retry-After');
+            const retrySeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60;
+            handleRateLimit(retrySeconds);
+            item.resolve();
+            continue;
+          }
+
+          // Handle other errors with retry logic
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'TTS request failed');
+            const errorMessage = errorData.error || `TTS request failed (${response.status})`;
+
+            // Retry with exponential backoff for server errors (5xx)
+            if (response.status >= 500 && retryCount < MAX_RETRIES) {
+              const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, retryCount);
+              console.log(`TTS server error, retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+              
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+              
+              // Re-queue with incremented retry count
+              queueRef.current.unshift({
+                ...item,
+                retryCount: retryCount + 1,
+              });
+              continue;
+            }
+
+            throw new Error(errorMessage);
           }
 
           const audioBlob = await response.blob();
@@ -204,7 +289,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
               forceResolvePlaybackRef.current = null;
             };
 
-            // Allow stop() to resolve this promise (otherwise pause() doesn't trigger onended)
+            // Allow stop() to resolve this promise
             forceResolvePlaybackRef.current = () => {
               try {
                 audio.pause();
@@ -248,8 +333,9 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
             continue;
           }
 
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
           console.error('TTS error:', err);
-          setError(err instanceof Error ? err.message : 'Unknown error');
+          handleError(errorMessage, retryCount >= MAX_RETRIES - 1);
           setIsLoading(false);
           item.resolve();
         } finally {
@@ -259,11 +345,18 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     } finally {
       isProcessingRef.current = false;
     }
-  }, [onSpeakStart, onSpeakEnd]);
+  }, [onSpeakStart, onSpeakEnd, isRateLimited, handleError, handleRateLimit]);
 
   const speak = useCallback((text: string, options?: { priority?: boolean; allowDuplicate?: boolean }): Promise<void> => {
     return new Promise((resolve) => {
       if (!enabled || !text.trim()) {
+        resolve();
+        return;
+      }
+
+      // Skip if rate limited (but don't show toast for every call)
+      if (isRateLimited) {
+        console.log('TTS rate limited, skipping speak call');
         resolve();
         return;
       }
@@ -284,6 +377,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         text,
         resolve,
         reject: () => resolve(),
+        retryCount: 0,
       };
 
       if (priority) {
@@ -294,7 +388,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
 
       processQueue();
     });
-  }, [enabled, processQueue]);
+  }, [enabled, processQueue, isRateLimited]);
 
   const stop = useCallback(() => {
     // Invalidate any queued/in-flight audio so it can't play on the next question
@@ -396,7 +490,6 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   }, [speak]);
 
   // Read a question aloud
-  // NOTE: we intentionally keep duplicate protection ON here to avoid the previous-question repeat bug.
   const readQuestion = useCallback(async (questionText: string) => {
     stop();
     await speak(questionText, { priority: true });
@@ -417,5 +510,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     isSpeaking,
     isLoading,
     error,
+    isRateLimited,
+    retryAfter,
   };
 }
