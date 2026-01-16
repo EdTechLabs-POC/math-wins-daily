@@ -4,12 +4,19 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSoundEffects } from '@/hooks/useSoundEffects';
-import { Sparkles, Play, Star } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { Sparkles, Play, Star, LogOut } from 'lucide-react';
 
 export default function Index() {
   const navigate = useNavigate();
   const [childName, setChildName] = useState('');
   const sounds = useSoundEffects();
+  const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
 
   const handleStart = () => {
     sounds.celebrate();
@@ -162,22 +169,38 @@ export default function Index() {
           ))}
         </motion.div>
 
-        {/* Parent login link */}
+        {/* User info and sign out */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1.5 }}
-          className="mt-8"
+          className="mt-8 flex flex-col items-center gap-2"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => navigate('/parent')}
-          >
-            <Star className="w-4 h-4 mr-1" />
-            Parent Dashboard
-          </Button>
+          {user && (
+            <p className="text-sm text-muted-foreground">
+              Signed in as {user.email}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => navigate('/parent')}
+            >
+              <Star className="w-4 h-4 mr-1" />
+              Parent Dashboard
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={handleSignOut}
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              Sign Out
+            </Button>
+          </div>
         </motion.div>
       </div>
     </div>
