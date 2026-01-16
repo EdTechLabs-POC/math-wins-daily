@@ -67,19 +67,16 @@ export default function Auth() {
   };
 
   const checkEmailAllowed = async (emailToCheck: string): Promise<boolean> => {
-    // Check if email exists in students table as parent_email (case-insensitive)
+    // Use database function for case-insensitive allowlist check (bypasses RLS)
     const { data, error } = await supabase
-      .from('students')
-      .select('id')
-      .ilike('parent_email', emailToCheck.trim())
-      .limit(1);
+      .rpc('is_email_allowlisted', { p_email: emailToCheck.trim() });
     
     if (error) {
       console.error('Error checking email allowlist:', error);
       return false;
     }
     
-    return data && data.length > 0;
+    return data === true;
   };
 
   const linkUserToStudent = async (userId: string, userEmail: string) => {
