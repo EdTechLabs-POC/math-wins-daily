@@ -171,8 +171,8 @@ export function DragDropQuestion({
 
   // Trigger voice prompt on mount
   useEffect(() => {
-    onVoicePrompt?.(task.voicePrompt);
-  }, [task.voicePrompt, onVoicePrompt]);
+    onVoicePrompt?.(task.instruction);
+  }, [task.instruction, onVoicePrompt]);
 
   const handleDragStart = (event: DragStartEvent) => {
     if (disabled || showResult) return;
