@@ -1,105 +1,64 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 
 interface UseBackgroundMusicOptions {
   autoPlay?: boolean;
 }
 
+// Royalty-free children's learning music - gentle piano loop
+// Source: Free Music Archive / Public Domain
+const BACKGROUND_MUSIC_URL = 'https://cdn.pixabay.com/audio/2024/11/04/audio_c978921b66.mp3';
+
 /**
- * Background music hook using ElevenLabs AI-generated music
- * Generates a child-friendly, mellow loop for learning sessions
+ * Background music hook using a royalty-free ambient track
+ * Plays a child-friendly, mellow loop for learning sessions
  */
 export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
   const { autoPlay = false } = options;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [volume, setVolumeState] = useState(0.2);
+  const [volume, setVolumeState] = useState(0.15);
   const [error, setError] = useState<string | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
-  const hasGeneratedRef = useRef(false);
+  const hasInitializedRef = useRef(false);
 
-  // Music prompt for child-friendly learning ambient
-  const MUSIC_PROMPT = "Gentle, calming children's background music with soft piano and light synthesizer pads. Playful but not distracting, suitable for focus and learning. Loopable ambient track with a positive, encouraging mood. No vocals.";
+  const initializeAudio = useCallback(() => {
+    if (audioRef.current) return audioRef.current;
 
-  const generateAndPlay = useCallback(async () => {
-    // If we already have generated audio, just play it
-    if (audioUrlRef.current && audioRef.current) {
-      audioRef.current.play();
-      setIsPlaying(true);
-      return;
-    }
+    const audio = new Audio(BACKGROUND_MUSIC_URL);
+    audio.loop = true;
+    audio.volume = volume;
+    audio.preload = 'auto';
 
-    // Only generate once per session
-    if (hasGeneratedRef.current || isLoading) return;
-    hasGeneratedRef.current = true;
+    audio.onplay = () => setIsPlaying(true);
+    audio.onpause = () => setIsPlaying(false);
+    audio.oncanplaythrough = () => setIsLoading(false);
+    audio.onerror = () => {
+      setError('Failed to load background music');
+      setIsPlaying(false);
+      setIsLoading(false);
+    };
 
-    setIsLoading(true);
-    setError(null);
+    audioRef.current = audio;
+    return audio;
+  }, [volume]);
 
+  const play = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error('Not authenticated');
+      const audio = initializeAudio();
+      
+      if (!hasInitializedRef.current) {
+        setIsLoading(true);
+        hasInitializedRef.current = true;
       }
-
-      console.log('Generating background music...');
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-music`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            prompt: MUSIC_PROMPT,
-            duration: 30, // 30 seconds, will loop
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate music');
-      }
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      audioUrlRef.current = audioUrl;
-
-      const audio = new Audio(audioUrl);
-      audio.loop = true;
-      audio.volume = volume;
-      audioRef.current = audio;
-
-      audio.onplay = () => setIsPlaying(true);
-      audio.onpause = () => setIsPlaying(false);
-      audio.onerror = () => {
-        setError('Failed to play music');
-        setIsPlaying(false);
-      };
 
       await audio.play();
-      console.log('Background music started');
+      setError(null);
     } catch (err) {
-      console.error('Background music error:', err);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      hasGeneratedRef.current = false; // Allow retry
-    } finally {
+      // Browser may block autoplay - this is expected
+      console.log('Background music play blocked (expected on first load):', err);
       setIsLoading(false);
     }
-  }, [volume, isLoading]);
-
-  const play = useCallback(() => {
-    if (audioRef.current && audioUrlRef.current) {
-      audioRef.current.play();
-      return;
-    }
-    generateAndPlay();
-  }, [generateAndPlay]);
+  }, [initializeAudio]);
 
   const pause = useCallback(() => {
     if (audioRef.current) {
@@ -123,6 +82,11 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
     }
   }, []);
 
+  // Preload audio on mount
+  useEffect(() => {
+    initializeAudio();
+  }, [initializeAudio]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -130,23 +94,18 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
         audioRef.current.pause();
         audioRef.current = null;
       }
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-        audioUrlRef.current = null;
-      }
     };
   }, []);
 
   // Auto-play if enabled (requires user interaction first due to browser policies)
   useEffect(() => {
-    if (autoPlay && !isPlaying && !isLoading && !hasGeneratedRef.current) {
-      // Delayed auto-play after a short time
+    if (autoPlay && !isPlaying && !isLoading) {
       const timer = setTimeout(() => {
-        generateAndPlay();
-      }, 1000);
+        play();
+      }, 500);
       return () => clearTimeout(timer);
     }
-  }, [autoPlay, isPlaying, isLoading, generateAndPlay]);
+  }, [autoPlay, isPlaying, isLoading, play]);
 
   return {
     isPlaying,
