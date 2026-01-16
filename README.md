@@ -1,73 +1,128 @@
-# Welcome to your Lovable project
+# 🎓 Adaptive Maths Tutor — POC
 
-## Project info
+An **AI-powered, schema-driven adaptive maths tutor** for **Year 3 (ages 7–8)**, focused on early gap detection, personalised practice, and clear progress signals for parents.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+This repository contains the **active POC implementation**.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## 🎯 POC Goal
 
-**Use Lovable**
+Validate that:
+- Learning gaps can be **diagnosed reliably**
+- Practice can **adapt in real time**
+- Progress can be **clearly explained to parents**
+- This can be achieved **without pre-building large content banks**
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+This is a **speed-to-truth** build, not a scale-ready product.
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 🧠 Core Approach
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- **Schema-driven questions** (AI renders, never invents)
+- **Generate → Validate → Cache → Reuse**
+- Deterministic validation eliminates hallucinations
+- Wizard-of-Oz allowed where it accelerates learning
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+AI is used as a **renderer**, not a decision-maker.
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## 🏗️ Tech Stack (and what each part does)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Frontend
 
-# Step 3: Install the necessary dependencies.
-npm i
+| Technology | Purpose in This Project |
+|----------|--------------------------|
+| **React 18 + TypeScript** | Deterministic UI and strongly-typed learning state |
+| **Vite** | Fast local development and iteration speed |
+| **Tailwind CSS** | Rapid, consistent UI styling |
+| **shadcn/ui (Radix)** | Accessible, composable UI primitives |
+| **Framer Motion** | Micro-animations for child-friendly feedback |
+| **@dnd-kit** | Interactive drag-and-drop math activities |
+| **React Hook Form + Zod** | Typed, validated learning inputs |
+| **React Router DOM** | Screen and flow navigation |
+| **TanStack React Query** | Server state, caching, retries |
+| **Recharts** | Parent-facing progress and confidence charts |
+| **Sonner** | Lightweight notifications |
+| **date-fns + react-day-picker** | Scheduling, streaks, timelines |
+| **use-sound** | UI sound effects and feedback cues |
+| **Vitest + Testing Library** | Unit and component testing |
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+---
 
-**Edit a file directly in GitHub**
+### Backend / Platform (Supabase)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+| Technology | Purpose |
+|----------|---------|
+| **Supabase (Managed Backend)** | Rapid backend without ops overhead |
+| **PostgreSQL** | Question cache, learning telemetry, confidence tracking |
+| **Supabase Auth** | Student / parent authentication |
+| **Edge Functions (Deno)** | Secure AI + audio API orchestration |
+| **@supabase/supabase-js** | Typed client SDK |
 
-**Use GitHub Codespaces**
+---
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### AI & Audio Services
 
-## What technologies are used for this project?
+| Service | Model / API | Role |
+|------|-------------|------|
+| **AI Gateway** | `google/gemini-2.5-flash` | Schema-based adaptive question generation |
+| **ElevenLabs TTS** | `eleven_turbo_v2_5` | Tutor voice narration and explanations |
+| **ElevenLabs Music API** | Music Generation | Background music (edge function exists; currently local audio is used) |
 
-This project is built with:
+---
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## ⚙️ Edge Functions
 
-## How can I deploy this project?
+| Function | Purpose | External API |
+|--------|--------|--------------|
+| `generate-assessment` | Generates adaptive maths questions from schemas | Gemini |
+| `text-to-speech` | Converts tutor text to audio | ElevenLabs TTS |
+| `generate-music` | Background music generation (optional) | ElevenLabs Music API |
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+---
 
-## Can I connect a custom domain to my Lovable project?
+## 🔊 Audio & Voice Flow
 
-Yes, you can!
+**Tutor Output**
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+---
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## 🧩 Repository Structure
+
+
+## 🧪 What This POC Is / Is Not
+
+### In Scope
+- Adaptive logic
+- Question correctness
+- Audio learning experience
+- Parent-facing clarity
+
+### Out of Scope
+- Full curriculum coverage
+- Voice cloning
+- Gamification depth
+- Long-term optimisation
+
+---
+
+## 🤝 Contribution Guidelines
+
+- Prefer **clarity over cleverness**
+- Keep changes **small and reversible**
+- If manual work gives faster truth, do it
+- Flag uncertainty early
+
+This is a **learning system first**.
+
+---
+
+## 📍 Status
+
+🚧 **Active POC — rapid iteration expected**
+
+Expect changing assumptions, evolving schemas, and frequent refactors.
