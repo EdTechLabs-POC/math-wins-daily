@@ -82,7 +82,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const queueRef = useRef<string[]>([]);
+  const queueRef = useRef<{ text: string; resolve: () => void; reject: (err: Error) => void }[]>([]);
   const isProcessingRef = useRef(false);
   const lastSpokenTextRef = useRef<string | null>(null);
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,6 +97,8 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         audioRef.current.pause();
         audioRef.current = null;
       }
+      // Reject any pending promises
+      queueRef.current.forEach(item => item.resolve());
       queueRef.current = [];
     };
   }, []);
@@ -106,13 +108,16 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     isProcessingRef.current = true;
 
     while (queueRef.current.length > 0) {
-      const text = queueRef.current.shift();
-      if (!text) continue;
+      const item = queueRef.current.shift();
+      if (!item) continue;
+
+      const { text, resolve, reject } = item;
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) {
           console.warn('No session for TTS');
+          resolve();
           continue;
         }
 
@@ -142,7 +147,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
 
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((audioResolve, audioReject) => {
           const audio = new Audio(audioUrl);
           audioRef.current = audio;
 
@@ -156,52 +161,64 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
             onSpeakEnd?.();
             URL.revokeObjectURL(audioUrl);
             audioRef.current = null;
-            resolve();
+            audioResolve();
           };
 
           audio.onerror = () => {
             setIsSpeaking(false);
             URL.revokeObjectURL(audioUrl);
             audioRef.current = null;
-            reject(new Error('Audio playback failed'));
+            audioReject(new Error('Audio playback failed'));
           };
 
-          audio.play().catch(reject);
+          audio.play().catch(audioReject);
         });
+
+        resolve(); // Resolve the speak promise after audio completes
       } catch (err) {
         console.error('TTS error:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
         setIsLoading(false);
+        resolve(); // Still resolve to prevent hanging
       }
     }
 
     isProcessingRef.current = false;
   }, [onSpeakStart, onSpeakEnd]);
 
-  const speak = useCallback(async (text: string, options?: { priority?: boolean; allowDuplicate?: boolean }) => {
-    if (!enabled || !text.trim()) return;
-    
-    const { priority = false, allowDuplicate = false } = options || {};
-    
-    // Prevent duplicate consecutive messages (unless explicitly allowed)
-    if (!allowDuplicate && lastSpokenTextRef.current === text) {
-      console.log('Skipping duplicate TTS:', text.substring(0, 50));
-      return;
-    }
-    
-    lastSpokenTextRef.current = text;
-    
-    if (priority) {
-      queueRef.current.unshift(text);
-    } else {
-      queueRef.current.push(text);
-    }
-    
-    processQueue();
+  const speak = useCallback((text: string, options?: { priority?: boolean; allowDuplicate?: boolean }): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!enabled || !text.trim()) {
+        resolve();
+        return;
+      }
+      
+      const { priority = false, allowDuplicate = false } = options || {};
+      
+      // Prevent duplicate consecutive messages (unless explicitly allowed)
+      if (!allowDuplicate && lastSpokenTextRef.current === text) {
+        console.log('Skipping duplicate TTS:', text.substring(0, 50));
+        resolve();
+        return;
+      }
+      
+      lastSpokenTextRef.current = text;
+      
+      const queueItem = { text, resolve, reject: () => resolve() };
+      
+      if (priority) {
+        queueRef.current.unshift(queueItem);
+      } else {
+        queueRef.current.push(queueItem);
+      }
+      
+      processQueue();
+    });
   }, [enabled, processQueue]);
 
   const stop = useCallback(() => {
-    // Clear the queue
+    // Resolve all pending promises in queue
+    queueRef.current.forEach(item => item.resolve());
     queueRef.current = [];
     lastSpokenTextRef.current = null;
     
@@ -224,10 +241,10 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   }, [onSpeakEnd]);
 
   // Clear duplicate tracking when stopping (allows same text after explicit stop)
-  const clearAndSpeak = useCallback(async (text: string) => {
+  const clearAndSpeak = useCallback(async (text: string): Promise<void> => {
     stop();
     lastSpokenTextRef.current = null; // Reset so we can speak this text
-    await speak(text, { allowDuplicate: true });
+    return speak(text, { allowDuplicate: true });
   }, [stop, speak]);
 
   // Helper to get random item from array

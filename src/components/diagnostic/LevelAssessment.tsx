@@ -68,6 +68,7 @@ export function LevelAssessment({
   const [questionIndex, setQuestionIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(voiceEnabled);
+  const [canContinue, setCanContinue] = useState(false);
   
   // Ref to track if initial fetch has happened
   const hasInitializedRef = useRef(false);
@@ -146,11 +147,12 @@ export function LevelAssessment({
 
       setCurrentQuestion(data.question);
       setIsLoading(false);
+      setCanContinue(false);
       
-      // Read the question aloud after a short delay for animation
-      if (voiceOn && data.question.voicePrompt) {
+      // Read the exact question instruction aloud after a short delay for animation
+      if (voiceOn && data.question.instruction) {
         setTimeout(() => {
-          voice.readQuestion(data.question.voicePrompt);
+          voice.readQuestion(data.question.instruction);
         }, 600);
       }
     } catch (err) {
@@ -181,13 +183,25 @@ export function LevelAssessment({
   const handleAnswer = async (answer: number) => {
     if (showFeedback || !currentQuestion) return;
 
+    // Stop any currently playing audio (like question reading)
+    voice.stop();
+
     setSelectedAnswer(answer);
     setShowFeedback(true);
+    setCanContinue(false); // Disable continue until feedback audio finishes
     
     const correct = answer === currentQuestion.correctAnswer;
     setIsCorrect(correct);
 
-    // Voice feedback
+    // Update previous responses first
+    const newResponse: PreviousResponse = {
+      question: currentQuestion.instruction,
+      answer: String(answer),
+      correct,
+    };
+    setPreviousResponses(prev => [...prev, newResponse]);
+
+    // Voice feedback - await completion before allowing continue
     if (voiceOn) {
       if (correct) {
         await voice.celebrateCorrect();
@@ -195,15 +209,9 @@ export function LevelAssessment({
         await voice.encourageIncorrect(currentQuestion.correctAnswer);
       }
     }
-
-    // Update previous responses
-    const newResponse: PreviousResponse = {
-      question: currentQuestion.instruction,
-      answer: String(answer),
-      correct,
-    };
-
-    setPreviousResponses(prev => [...prev, newResponse]);
+    
+    // Now allow user to continue
+    setCanContinue(true);
   };
 
   const handleContinue = () => {
@@ -383,8 +391,9 @@ export function LevelAssessment({
                       <Button
                         className="mt-4"
                         onClick={handleContinue}
+                        disabled={!canContinue && voiceOn}
                       >
-                        Next Question →
+                        {!canContinue && voiceOn ? 'Listening...' : 'Next Question →'}
                       </Button>
                     </motion.div>
                   )}
