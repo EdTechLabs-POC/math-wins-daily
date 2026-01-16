@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { Lock } from 'lucide-react';
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: "Please enter a valid email address" }).max(255, { message: "Email must be less than 255 characters" }),
@@ -14,13 +16,12 @@ const authSchema = z.object({
 });
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   
-  const { user, signIn, signUp } = useAuth();
+  const { user, signIn } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -46,17 +47,46 @@ export default function Auth() {
     return true;
   };
 
+  const checkEmailAllowed = async (emailToCheck: string): Promise<boolean> => {
+    // Check if email exists in students table as parent_email
+    const { data, error } = await supabase
+      .from('students')
+      .select('id')
+      .eq('parent_email', emailToCheck.toLowerCase().trim())
+      .limit(1);
+    
+    if (error) {
+      console.error('Error checking email allowlist:', error);
+      return false;
+    }
+    
+    return data && data.length > 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validateForm()) return;
     
     setIsSubmitting(true);
+    const trimmedEmail = email.trim().toLowerCase();
 
     try {
-      const { error } = isLogin 
-        ? await signIn(email.trim(), password)
-        : await signUp(email.trim(), password);
+      // First check if email is in the allowlist
+      const isAllowed = await checkEmailAllowed(trimmedEmail);
+      
+      if (!isAllowed) {
+        toast({
+          variant: "destructive",
+          title: "Restricted Access",
+          description: "This email is not authorized to access the platform. Please contact support if you believe this is an error.",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Email is allowed, proceed with sign in
+      const { error } = await signIn(trimmedEmail, password);
 
       if (error) {
         let errorMessage = error.message;
@@ -64,23 +94,15 @@ export default function Auth() {
         // Handle common auth errors with friendly messages
         if (error.message.includes('Invalid login credentials')) {
           errorMessage = 'Invalid email or password. Please try again.';
-        } else if (error.message.includes('User already registered')) {
-          errorMessage = 'An account with this email already exists. Please sign in instead.';
         } else if (error.message.includes('Email not confirmed')) {
           errorMessage = 'Please check your email to confirm your account.';
         }
 
         toast({
           variant: "destructive",
-          title: isLogin ? "Sign in failed" : "Sign up failed",
+          title: "Sign in failed",
           description: errorMessage,
         });
-      } else if (!isLogin) {
-        toast({
-          title: "Account created!",
-          description: "You can now sign in with your credentials.",
-        });
-        setIsLogin(true);
       }
     } catch (err) {
       toast({
@@ -97,13 +119,14 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-100 to-purple-100 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+            <Lock className="w-6 h-6 text-primary" />
+          </div>
           <CardTitle className="text-2xl font-bold text-primary">
-            {isLogin ? 'Welcome Back!' : 'Create Account'}
+            Welcome Back!
           </CardTitle>
           <CardDescription>
-            {isLogin 
-              ? 'Sign in to continue your child\'s learning journey' 
-              : 'Sign up to track your child\'s math progress'}
+            Sign in to continue your child's learning journey
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -133,7 +156,7 @@ export default function Auth() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isSubmitting}
-                autoComplete={isLogin ? "current-password" : "new-password"}
+                autoComplete="current-password"
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password}</p>
@@ -145,25 +168,14 @@ export default function Auth() {
               className="w-full" 
               disabled={isSubmitting}
             >
-              {isSubmitting 
-                ? 'Please wait...' 
-                : isLogin ? 'Sign In' : 'Create Account'}
+              {isSubmitting ? 'Please wait...' : 'Sign In'}
             </Button>
           </form>
 
           <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setErrors({});
-              }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {isLogin 
-                ? "Don't have an account? Sign up" 
-                : "Already have an account? Sign in"}
-            </button>
+            <p className="text-sm text-muted-foreground">
+              Access is restricted to registered parents only.
+            </p>
           </div>
         </CardContent>
       </Card>
