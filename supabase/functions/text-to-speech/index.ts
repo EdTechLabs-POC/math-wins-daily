@@ -19,6 +19,7 @@ const ALLOWED_VOICE_IDS = [
 ];
 
 const MAX_TEXT_LENGTH = 1000; // Reasonable limit for educational TTS
+const RATE_LIMIT_PER_HOUR = 50; // Maximum TTS requests per user per hour
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -36,6 +37,7 @@ serve(async (req) => {
       );
     }
 
+    // Create Supabase client with user's auth context
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
@@ -48,6 +50,37 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use service role client for rate limiting operations
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
+    // Check rate limit using database function
+    const { data: requestCount, error: rateLimitError } = await serviceClient
+      .rpc('check_tts_rate_limit', { p_user_id: user.id });
+
+    if (rateLimitError) {
+      console.error("Rate limit check error:", rateLimitError);
+      // Continue without rate limiting if check fails, but log it
+    } else if (requestCount >= RATE_LIMIT_PER_HOUR) {
+      console.warn(`User ${user.id} exceeded rate limit: ${requestCount} requests in last hour`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limit exceeded. Please try again later.",
+          retryAfter: 3600 // Suggest retry after 1 hour
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": "3600"
+          } 
+        }
       );
     }
 
@@ -94,7 +127,7 @@ serve(async (req) => {
       throw new Error("ELEVENLABS_API_KEY not configured");
     }
 
-    console.log(`User ${user.id} generating TTS for: "${sanitizedText.substring(0, 50)}..."`);
+    console.log(`User ${user.id} generating TTS (request ${(requestCount || 0) + 1}/${RATE_LIMIT_PER_HOUR}): "${sanitizedText.substring(0, 50)}..."`);
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
@@ -120,6 +153,18 @@ serve(async (req) => {
       const errorText = await response.text();
       console.error("ElevenLabs error:", errorText);
       throw new Error(`TTS failed: ${response.status}`);
+    }
+
+    // Log successful TTS usage for rate limiting
+    const { error: logError } = await serviceClient
+      .rpc('log_tts_usage', { 
+        p_user_id: user.id, 
+        p_character_count: sanitizedText.length 
+      });
+
+    if (logError) {
+      console.error("Failed to log TTS usage:", logError);
+      // Don't fail the request if logging fails
     }
 
     const audioBuffer = await response.arrayBuffer();
