@@ -196,9 +196,47 @@ quality = compare_to_benchmark(
 print(quality["passes_benchmark"])  # False (lacks context)
 ```
 
-### With Dedalus MCP
+### Running the MCP Server
 
-These tools are designed to be registered with the Dedalus MCP server. The `TOOL_METADATA` in each file provides the schema for automatic tool registration.
+#### Option 1: stdio Transport (Recommended for Dedalus)
+
+```bash
+python server.py --transport stdio
+```
+
+This runs the server listening on stdin/stdout, which is the standard MCP transport.
+
+#### Option 2: HTTP Transport
+
+```bash
+python server.py --transport http --port 8080
+```
+
+#### Dedalus Configuration
+
+Add this to your Dedalus MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "dedalus-math": {
+      "command": "python",
+      "args": ["path/to/mcp-tools/server.py", "--transport", "stdio"],
+      "env": {}
+    }
+  }
+}
+```
+
+#### Testing the Server
+
+```bash
+# Test tools/list
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python server.py
+
+# Test a tool call
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"validate_question","arguments":{"question":"What is 5 × 3?","topic":"multiplication"}}}' | python server.py
+```
 
 ---
 
