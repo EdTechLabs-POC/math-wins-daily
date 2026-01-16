@@ -3,21 +3,30 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDiagnosticFlow } from '@/hooks/useDiagnosticFlow';
 import { useBackgroundMusic } from '@/hooks/useBackgroundMusic';
-import { useTutorFeedback } from '@/hooks/useTutorFeedback';
+import { useEnhancedVoiceCompanion } from '@/hooks/useEnhancedVoiceCompanion';
 import { useImmersiveSounds } from '@/hooks/useImmersiveSounds';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { CountingQuestion } from '@/components/diagnostic/CountingQuestion';
 import { TapCountQuestion } from '@/components/diagnostic/TapCountQuestion';
 import { DragDropQuestion } from '@/components/diagnostic/DragDropQuestion';
 import { GroupedCountQuestion } from '@/components/diagnostic/GroupedCountQuestion';
 import { RepairFlow } from '@/components/diagnostic/RepairFlow';
 import { DiagnosticResults } from '@/components/diagnostic/DiagnosticResults';
+import { LevelAssessment } from '@/components/diagnostic/LevelAssessment';
 import { Progress } from '@/components/ui/progress';
-import { Volume2, VolumeX, Music, Music2 } from 'lucide-react';
+import { Volume2, VolumeX, Music, Music2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Level1TaskA, Level1TaskB, Level2TaskA, Level2TaskB } from '@/types/diagnostic';
 
+type DiagnosticPhase = 'loading' | 'assessment' | 'diagnostic' | 'complete';
+
 export default function Diagnostic() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [phase, setPhase] = useState<DiagnosticPhase>('loading');
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [studentAge, setStudentAge] = useState<number>(6);
   const [startTime, setStartTime] = useState<number>(Date.now());
   const [attemptNumber, setAttemptNumber] = useState(1);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
@@ -35,10 +44,70 @@ export default function Diagnostic() {
 
   // Audio hooks
   const bgMusic = useBackgroundMusic();
-  const tutor = useTutorFeedback({ enabled: voiceEnabled });
+  const voice = useEnhancedVoiceCompanion({ enabled: voiceEnabled });
   const sounds = useImmersiveSounds();
 
   const currentTask = getCurrentTask();
+
+  // Check if user needs initial assessment
+  useEffect(() => {
+    const checkStudentStatus = async () => {
+      if (!user) {
+        navigate('/auth');
+        return;
+      }
+
+      try {
+        // Get the student associated with this user
+        const { data: students, error } = await supabase
+          .from('students')
+          .select('id, age, diagnostic_completed_at')
+          .eq('user_id', user.id)
+          .limit(1);
+
+        if (error) {
+          console.error('Error fetching student:', error);
+          // Fallback to diagnostic if we can't check
+          setPhase('diagnostic');
+          return;
+        }
+
+        if (students && students.length > 0) {
+          const student = students[0];
+          setStudentId(student.id);
+          setStudentAge(student.age || 6);
+
+          // Check if they've completed initial assessment
+          if (student.diagnostic_completed_at) {
+            setPhase('diagnostic');
+          } else {
+            // Check for existing level assessment
+            const { data: assessments } = await supabase
+              .from('level_assessments')
+              .select('id')
+              .eq('student_id', student.id)
+              .eq('assessment_type', 'initial')
+              .not('completed_at', 'is', null)
+              .limit(1);
+
+            if (assessments && assessments.length > 0) {
+              setPhase('diagnostic');
+            } else {
+              setPhase('assessment');
+            }
+          }
+        } else {
+          // No student record found, go straight to diagnostic
+          setPhase('diagnostic');
+        }
+      } catch (err) {
+        console.error('Error checking student status:', err);
+        setPhase('diagnostic');
+      }
+    };
+
+    checkStudentStatus();
+  }, [user, navigate]);
 
   // Start background music on first interaction
   useEffect(() => {
@@ -68,21 +137,21 @@ export default function Diagnostic() {
 
   const handleVoicePrompt = useCallback((text: string) => {
     if (voiceEnabled) {
-      tutor.introduceTask(text);
+      voice.introduceTask(text, false);
     }
-  }, [voiceEnabled, tutor]);
+  }, [voiceEnabled, voice]);
 
   const handleCorrectFeedback = useCallback(() => {
     if (voiceEnabled) {
-      tutor.celebrateCorrect();
+      voice.celebrateCorrect();
     }
-  }, [voiceEnabled, tutor]);
+  }, [voiceEnabled, voice]);
 
   const handleIncorrectFeedback = useCallback((correctAnswer: number | string) => {
     if (voiceEnabled) {
-      tutor.encourageIncorrect(correctAnswer);
+      voice.encourageIncorrect(correctAnswer);
     }
-  }, [voiceEnabled, tutor]);
+  }, [voiceEnabled, voice]);
 
   const handleAnswer = useCallback((answer: unknown, isCorrect: boolean) => {
     const timeTaken = Math.round((Date.now() - startTime) / 1000);
@@ -124,6 +193,29 @@ export default function Diagnostic() {
     resetDiagnostic();
     setAttemptNumber(1);
   }, [resetDiagnostic]);
+
+  const handleAssessmentComplete = useCallback(async (level: 'level_1' | 'level_2', confidence: number) => {
+    console.log(`Assessment complete: ${level} with ${confidence} confidence`);
+    
+    // Update student record
+    if (studentId) {
+      await supabase
+        .from('students')
+        .update({ 
+          current_level: level,
+          diagnostic_completed_at: new Date().toISOString()
+        })
+        .eq('id', studentId);
+    }
+
+    sounds.celebration();
+    if (voiceEnabled) {
+      voice.celebrateLevelComplete();
+    }
+    
+    // Move to diagnostic phase
+    setPhase('diagnostic');
+  }, [studentId, sounds, voiceEnabled, voice]);
 
   // Render current task component
   const renderTask = () => {
@@ -177,6 +269,34 @@ export default function Diagnostic() {
     }
   };
 
+  // Loading state
+  if (phase === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-lg text-muted-foreground">Getting ready for your adventure...</p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Initial level assessment for new users
+  if (phase === 'assessment' && studentId) {
+    return (
+      <LevelAssessment
+        studentId={studentId}
+        studentAge={studentAge}
+        voiceEnabled={voiceEnabled}
+        onComplete={handleAssessmentComplete}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 p-4 md:p-8">
       {/* Header */}
@@ -217,7 +337,7 @@ export default function Diagnostic() {
               title={voiceEnabled ? 'Mute voice' : 'Enable voice'}
             >
               {voiceEnabled ? (
-                <Volume2 className={`w-5 h-5 ${tutor.isSpeaking ? 'text-primary animate-pulse' : ''}`} />
+                <Volume2 className={`w-5 h-5 ${voice.isSpeaking ? 'text-primary animate-pulse' : ''}`} />
               ) : (
                 <VolumeX className="w-5 h-5 text-muted-foreground" />
               )}
