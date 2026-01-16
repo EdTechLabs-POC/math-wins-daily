@@ -20,8 +20,9 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [isSignUp, setIsSignUp] = useState(false);
   
-  const { user, signIn } = useAuth();
+  const { user, signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -85,8 +86,10 @@ export default function Auth() {
         return;
       }
 
-      // Email is allowed, proceed with sign in
-      const { error } = await signIn(trimmedEmail, password);
+      // Email is allowed, proceed with sign in or sign up
+      const { error } = isSignUp 
+        ? await signUp(trimmedEmail, password)
+        : await signIn(trimmedEmail, password);
 
       if (error) {
         let errorMessage = error.message;
@@ -96,12 +99,19 @@ export default function Auth() {
           errorMessage = 'Invalid email or password. Please try again.';
         } else if (error.message.includes('Email not confirmed')) {
           errorMessage = 'Please check your email to confirm your account.';
+        } else if (error.message.includes('User already registered')) {
+          errorMessage = 'This email is already registered. Please sign in instead.';
         }
 
         toast({
           variant: "destructive",
-          title: "Sign in failed",
+          title: isSignUp ? "Sign up failed" : "Sign in failed",
           description: errorMessage,
+        });
+      } else if (isSignUp) {
+        toast({
+          title: "Account created!",
+          description: "You are now signed in.",
         });
       }
     } catch (err) {
@@ -123,10 +133,12 @@ export default function Auth() {
             <Lock className="w-6 h-6 text-primary" />
           </div>
           <CardTitle className="text-2xl font-bold text-primary">
-            Welcome Back!
+            {isSignUp ? "Create Account" : "Welcome Back!"}
           </CardTitle>
           <CardDescription>
-            Sign in to continue your child's learning journey
+            {isSignUp 
+              ? "Sign up to start your child's learning journey" 
+              : "Sign in to continue your child's learning journey"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -168,11 +180,20 @@ export default function Auth() {
               className="w-full" 
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Please wait...' : 'Sign In'}
+              {isSubmitting ? 'Please wait...' : (isSignUp ? 'Sign Up' : 'Sign In')}
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
+            <button
+              type="button"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-sm text-primary hover:underline"
+            >
+              {isSignUp 
+                ? "Already have an account? Sign in" 
+                : "Don't have an account? Sign up"}
+            </button>
             <p className="text-sm text-muted-foreground">
               Access is restricted to registered parents only.
             </p>
