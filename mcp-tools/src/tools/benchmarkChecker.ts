@@ -89,10 +89,10 @@ function hasName(text: string): boolean {
   return namePatterns.test(text);
 }
 
-export function compareToBenchmark(generatedQuestion: string, topic: string): BenchmarkResult {
+export function compareToBenchmark(generatedQuestion: string, _topic: string): BenchmarkResult {
   const improvements: string[] = [];
   const strengths: string[] = [];
-  const lowerQuestion = generatedQuestion.toLowerCase();
+  // Using generatedQuestion directly for case-sensitive checks
 
   // 1. Real-world context score (0-10)
   const contextMatches = countMatches(generatedQuestion, REAL_WORLD_CONTEXTS);

@@ -150,17 +150,32 @@ export function validateQuestion(question: string, topic: string): ValidationRes
       break;
     }
 
-    case "addition":
-    case "subtraction": {
-      const opStandards = YEAR_3_STANDARDS[topic];
+    case "addition": {
+      const addStandards = YEAR_3_STANDARDS.addition;
       const maxNum = Math.max(...numbers, 0);
 
-      if (maxNum > opStandards.max_sum || maxNum > opStandards.max_value) {
-        issues.push(`Numbers exceed Year 3 ${topic} range (max ${opStandards.max_sum || opStandards.max_value})`);
+      if (maxNum > addStandards.max_sum) {
+        issues.push(`Numbers exceed Year 3 addition range (max ${addStandards.max_sum})`);
         yearGroupMatch = false;
       }
 
-      if (maxNum > opStandards.mental_max) {
+      if (maxNum > addStandards.mental_max) {
+        difficultyLevel = "challenge";
+        suggestions.push("This may require written methods rather than mental calculation");
+      }
+      break;
+    }
+
+    case "subtraction": {
+      const subStandards = YEAR_3_STANDARDS.subtraction;
+      const maxNum = Math.max(...numbers, 0);
+
+      if (maxNum > subStandards.max_value) {
+        issues.push(`Numbers exceed Year 3 subtraction range (max ${subStandards.max_value})`);
+        yearGroupMatch = false;
+      }
+
+      if (maxNum > subStandards.mental_max) {
         difficultyLevel = "challenge";
         suggestions.push("This may require written methods rather than mental calculation");
       }
