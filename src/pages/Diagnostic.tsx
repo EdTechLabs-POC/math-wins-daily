@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDiagnosticFlow } from '@/hooks/useDiagnosticFlow';
@@ -45,7 +45,10 @@ export default function Diagnostic() {
   // Audio hooks
   const bgMusic = useBackgroundMusic();
   const voice = useEnhancedVoiceCompanion({ enabled: voiceEnabled });
+  const { readQuestion, celebrateCorrect, encourageIncorrect, celebrateLevelComplete, speak, stop } = voice;
   const sounds = useImmersiveSounds();
+
+  const feedbackPromiseRef = useRef<Promise<void> | null>(null);
 
   const currentTask = getCurrentTask();
 
@@ -136,47 +139,65 @@ export default function Diagnostic() {
   };
 
   const handleVoicePrompt = useCallback((text: string) => {
-    if (voiceEnabled) {
-      voice.introduceTask(text, false);
-    }
-  }, [voiceEnabled, voice]);
+    if (!voiceEnabled) return;
+    // Read the on-screen instruction exactly (prevents "rephrasing" and avoids repeated prompts).
+    readQuestion(text);
+  }, [voiceEnabled, readQuestion]);
 
   const handleCorrectFeedback = useCallback(() => {
-    if (voiceEnabled) {
-      voice.celebrateCorrect();
-    }
-  }, [voiceEnabled, voice]);
+    if (!voiceEnabled) return;
+    // Stop any question audio before feedback
+    stop();
+    feedbackPromiseRef.current = celebrateCorrect();
+  }, [voiceEnabled, stop, celebrateCorrect]);
 
-  const handleIncorrectFeedback = useCallback((correctAnswer: number | string) => {
-    if (voiceEnabled) {
-      voice.encourageIncorrect(correctAnswer);
-    }
-  }, [voiceEnabled, voice]);
+  const handleIncorrectFeedback = useCallback((detail: number | string) => {
+    if (!voiceEnabled) return;
+    // Stop any question audio before feedback
+    stop();
+
+    feedbackPromiseRef.current = typeof detail === 'number'
+      ? encourageIncorrect(detail)
+      : speak(`Good try! ${detail}. Let's take another look.`, { priority: true, allowDuplicate: true });
+  }, [voiceEnabled, stop, encourageIncorrect, speak]);
 
   const handleAnswer = useCallback((answer: unknown, isCorrect: boolean) => {
-    const timeTaken = Math.round((Date.now() - startTime) / 1000);
-    
-    const getCorrectAnswer = () => {
-      if (currentTask?.type === 'count_objects') return (currentTask as Level1TaskA).correctAnswer;
-      if (currentTask?.type === 'tap_count') return (currentTask as Level1TaskB).targetCount;
-      if (currentTask?.type === 'count_grouped') {
-        const task = currentTask as Level2TaskB;
-        return task.bundleCount * task.bundleSize + task.looseCount;
+    (async () => {
+      // Do not advance to the next task until feedback audio completes.
+      // (submitTaskResult drives routing to the next question)
+      const pendingFeedback = feedbackPromiseRef.current;
+      if (voiceEnabled && pendingFeedback) {
+        try {
+          await pendingFeedback;
+        } finally {
+          feedbackPromiseRef.current = null;
+        }
       }
-      return 'matches';
-    };
 
-    submitTaskResult({
-      taskId: currentTask?.taskId || '',
-      isCorrect,
-      studentAnswer: answer,
-      correctAnswer: getCorrectAnswer(),
-      timeTakenSeconds: timeTaken,
-      attemptNumber
-    });
+      const timeTaken = Math.round((Date.now() - startTime) / 1000);
 
-    setAttemptNumber(prev => prev + 1);
-  }, [currentTask, startTime, attemptNumber, submitTaskResult]);
+      const getCorrectAnswer = () => {
+        if (currentTask?.type === 'count_objects') return (currentTask as Level1TaskA).correctAnswer;
+        if (currentTask?.type === 'tap_count') return (currentTask as Level1TaskB).targetCount;
+        if (currentTask?.type === 'count_grouped') {
+          const task = currentTask as Level2TaskB;
+          return task.bundleCount * task.bundleSize + task.looseCount;
+        }
+        return 'matches';
+      };
+
+      submitTaskResult({
+        taskId: currentTask?.taskId || '',
+        isCorrect,
+        studentAnswer: answer,
+        correctAnswer: getCorrectAnswer(),
+        timeTakenSeconds: timeTaken,
+        attemptNumber,
+      });
+
+      setAttemptNumber(prev => prev + 1);
+    })();
+  }, [currentTask, startTime, attemptNumber, submitTaskResult, voiceEnabled]);
 
   const handleRepairComplete = useCallback(() => {
     sounds.celebration();
@@ -210,7 +231,7 @@ export default function Diagnostic() {
 
     sounds.celebration();
     if (voiceEnabled) {
-      voice.celebrateLevelComplete();
+      await celebrateLevelComplete();
     }
     
     // Move to diagnostic phase

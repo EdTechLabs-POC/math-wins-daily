@@ -34,8 +34,8 @@ export function TapCountQuestion({
 
   // Trigger voice prompt on mount
   useEffect(() => {
-    onVoicePrompt?.(task.voicePrompt);
-  }, [task.voicePrompt, onVoicePrompt]);
+    onVoicePrompt?.(task.instruction);
+  }, [task.instruction, onVoicePrompt]);
 
   const handleObjectTap = useCallback((objectId: string) => {
     if (disabled || showResult) return;
