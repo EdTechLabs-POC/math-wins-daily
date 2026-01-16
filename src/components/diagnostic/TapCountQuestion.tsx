@@ -2,15 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { Level1TaskB } from '@/types/diagnostic';
-import { useSoundEffects } from '@/hooks/useSoundEffects';
+import { useImmersiveSounds } from '@/hooks/useImmersiveSounds';
 import { useInputFocusGuard } from '@/hooks/useInputFocusGuard';
 import { Button } from '@/components/ui/button';
 import { Check, RotateCcw } from 'lucide-react';
+import { AnimatedApples, Confetti } from './AnimatedVisuals';
 
 interface TapCountQuestionProps {
   task: Level1TaskB;
   onAnswer: (tappedIds: string[], isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
+  onCorrectFeedback?: () => void;
+  onIncorrectFeedback?: (correctAnswer: number) => void;
   disabled?: boolean;
 }
 
@@ -18,12 +21,15 @@ export function TapCountQuestion({
   task, 
   onAnswer, 
   onVoicePrompt,
+  onCorrectFeedback,
+  onIncorrectFeedback,
   disabled = false 
 }: TapCountQuestionProps) {
   const [tappedIds, setTappedIds] = useState<Set<string>>(new Set());
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const sounds = useSoundEffects();
+  const [showConfetti, setShowConfetti] = useState(false);
+  const sounds = useImmersiveSounds();
   const { guardedHandler, lockInteractions } = useInputFocusGuard({ debounceMs: 150 });
 
   // Trigger voice prompt on mount
@@ -31,28 +37,28 @@ export function TapCountQuestion({
     onVoicePrompt?.(task.voicePrompt);
   }, [task.voicePrompt, onVoicePrompt]);
 
-  const handleObjectTap = guardedHandler((objectId: string) => {
+  const handleObjectTap = useCallback((objectId: string) => {
     if (disabled || showResult) return;
 
-    sounds.tap();
+    sounds.bubble();
     
     setTappedIds(prev => {
       const newSet = new Set(prev);
       if (newSet.has(objectId)) {
         newSet.delete(objectId);
+        sounds.sticky();
       } else {
-        // Limit to target count + a bit of wiggle room
         if (newSet.size < task.targetCount + 3) {
           newSet.add(objectId);
         }
       }
       return newSet;
     });
-  });
+  }, [disabled, showResult, sounds, task.targetCount]);
 
   const handleReset = useCallback(() => {
     if (disabled || showResult) return;
-    sounds.pop();
+    sounds.whoosh();
     setTappedIds(new Set());
   }, [disabled, showResult, sounds]);
 
@@ -60,151 +66,167 @@ export function TapCountQuestion({
     if (disabled || showResult) return;
     
     setShowResult(true);
-    lockInteractions(1500);
+    lockInteractions(2500);
 
     const correct = tappedIds.size === task.targetCount;
     setIsCorrect(correct);
     
     if (correct) {
-      sounds.celebrate();
+      sounds.celebration();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+      onCorrectFeedback?.();
     } else {
-      sounds.incorrect();
+      sounds.oops();
+      onIncorrectFeedback?.(task.targetCount);
     }
 
     setTimeout(() => {
       onAnswer(Array.from(tappedIds), correct);
-    }, 1500);
+    }, 2500);
   });
 
   const currentCount = tappedIds.size;
   const targetReached = currentCount === task.targetCount;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="question-card max-w-3xl mx-auto"
-    >
-      {/* Question */}
-      <h2 className="text-child-lg text-center font-bold text-foreground mb-4">
-        {task.instruction}
-      </h2>
-
-      {/* Counter Display */}
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <motion.div
-          animate={{
-            scale: targetReached ? 1.1 : 1,
-            color: targetReached ? 'hsl(var(--success))' : 'hsl(var(--foreground))'
-          }}
-          className="text-child-xl font-bold"
+    <>
+      {showConfetti && <Confetti />}
+      
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className="question-card max-w-3xl mx-auto"
+      >
+        {/* Question */}
+        <motion.h2 
+          className="text-child-lg text-center font-bold text-foreground mb-4"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
         >
-          {currentCount}
-        </motion.div>
-        <span className="text-child-base text-muted-foreground">/</span>
-        <span className="text-child-xl font-bold text-muted-foreground">
-          {task.targetCount}
-        </span>
-      </div>
+          {task.instruction}
+        </motion.h2>
 
-      {/* Tappable Objects Grid */}
-      <div className="relative bg-muted/50 rounded-3xl p-6 mb-6 min-h-[300px]">
-        <div className="grid grid-cols-4 gap-4">
-          {task.objects.map((obj, index) => {
-            const isTapped = tappedIds.has(obj.id);
-            
-            return (
-              <motion.button
-                key={obj.id}
-                onClick={() => handleObjectTap(obj.id)}
-                disabled={disabled || showResult}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ 
-                  opacity: 1, 
-                  scale: 1,
-                  y: showResult && isTapped ? [0, -10, 0] : 0
-                }}
-                transition={{ 
-                  delay: index * 0.05,
-                  y: { duration: 0.3 }
-                }}
-                whileHover={!showResult ? { scale: 1.1 } : {}}
-                whileTap={!showResult ? { scale: 0.9 } : {}}
-                className={cn(
-                  'tap-object aspect-square rounded-2xl p-3 transition-all',
-                  'bg-card shadow-md hover:shadow-lg',
-                  isTapped && 'tapped bg-primary/10'
-                )}
-              >
-                {/* Apple emoji as placeholder - in production would use actual images */}
-                <span className="text-4xl">🍎</span>
-                
-                {/* Selection indicator */}
-                <AnimatePresence>
-                  {isTapped && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      exit={{ scale: 0 }}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
-                    >
-                      <Check className="w-4 h-4" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex items-center justify-center gap-4">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={handleReset}
-          disabled={disabled || showResult || tappedIds.size === 0}
-          className="btn-child"
+        {/* Counter Display */}
+        <motion.div 
+          className="flex items-center justify-center gap-4 mb-6"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', delay: 0.2 }}
         >
-          <RotateCcw className="w-5 h-5 mr-2" />
-          Start Over
-        </Button>
-        
-        <Button
-          size="lg"
-          onClick={handleSubmit}
-          disabled={disabled || showResult || tappedIds.size === 0}
-          className={cn(
-            'btn-child bg-primary text-primary-foreground',
-            targetReached && 'bg-success hover:bg-success/90'
-          )}
-        >
-          <Check className="w-5 h-5 mr-2" />
-          I'm Done!
-        </Button>
-      </div>
-
-      {/* Feedback */}
-      <AnimatePresence>
-        {showResult && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
+            animate={{
+              scale: targetReached ? [1, 1.2, 1] : 1,
+              color: targetReached ? 'hsl(var(--success))' : 'hsl(var(--foreground))'
+            }}
+            transition={{ duration: 0.3 }}
+            className="text-child-2xl font-bold"
+          >
+            {currentCount}
+          </motion.div>
+          <span className="text-child-lg text-muted-foreground">/</span>
+          <span className="text-child-2xl font-bold text-muted-foreground">
+            {task.targetCount}
+          </span>
+          
+          {targetReached && (
+            <motion.span
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              className="text-4xl"
+            >
+              ✨
+            </motion.span>
+          )}
+        </motion.div>
+
+        {/* Animated Tappable Objects */}
+        <motion.div 
+          className="relative bg-gradient-to-b from-green-200 to-green-100 dark:from-green-900 dark:to-green-800 rounded-3xl p-4 mb-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+        >
+          <AnimatedApples 
+            count={task.objects.length}
+            tappedIds={tappedIds}
+            onTap={handleObjectTap}
+            disabled={disabled || showResult}
+          />
+        </motion.div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-center gap-4">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleReset}
+            disabled={disabled || showResult || tappedIds.size === 0}
+            className="btn-child"
+          >
+            <RotateCcw className="w-5 h-5 mr-2" />
+            Start Over
+          </Button>
+          
+          <Button
+            size="lg"
+            onClick={handleSubmit}
+            disabled={disabled || showResult || tappedIds.size === 0}
             className={cn(
-              'mt-6 p-4 rounded-2xl text-center text-child-base font-bold',
-              isCorrect ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+              'btn-child bg-primary text-primary-foreground',
+              targetReached && 'bg-success hover:bg-success/90 animate-pulse'
             )}
           >
-            {isCorrect 
-              ? '🎉 Perfect! You counted exactly right!' 
-              : `You tapped ${currentCount}, but we needed ${task.targetCount}. Let's try again!`
-            }
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            <Check className="w-5 h-5 mr-2" />
+            I'm Done!
+          </Button>
+        </div>
+
+        {/* Feedback */}
+        <AnimatePresence>
+          {showResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={cn(
+                'mt-6 p-4 rounded-2xl text-center',
+                isCorrect ? 'bg-success/20' : 'bg-warning/20'
+              )}
+            >
+              {isCorrect ? (
+                <div className="flex items-center justify-center gap-3">
+                  <motion.span 
+                    className="text-5xl"
+                    animate={{ y: [0, -10, 0] }}
+                    transition={{ duration: 0.5, repeat: 2 }}
+                  >
+                    🎉
+                  </motion.span>
+                  <span className="text-child-base font-bold text-success">
+                    Perfect! You tapped exactly {task.targetCount}!
+                  </span>
+                  <motion.span 
+                    className="text-5xl"
+                    animate={{ y: [0, -10, 0] }}
+                    transition={{ duration: 0.5, repeat: 2, delay: 0.2 }}
+                  >
+                    🍎
+                  </motion.span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-4xl">🤔</span>
+                  <span className="text-child-base font-bold text-warning">
+                    You tapped {currentCount}, but we needed {task.targetCount}!
+                  </span>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </>
   );
 }

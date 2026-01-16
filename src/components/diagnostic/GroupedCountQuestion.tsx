@@ -2,16 +2,16 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { Level2TaskB } from '@/types/diagnostic';
-import { useSoundEffects } from '@/hooks/useSoundEffects';
+import { useImmersiveSounds } from '@/hooks/useImmersiveSounds';
 import { useInputFocusGuard } from '@/hooks/useInputFocusGuard';
-
-// Import sticks image
-import sticksImg from '@/assets/diagnostic/sticks.png';
+import { AnimatedSticks, Confetti } from './AnimatedVisuals';
 
 interface GroupedCountQuestionProps {
   task: Level2TaskB;
   onAnswer: (answer: number, isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
+  onCorrectFeedback?: () => void;
+  onIncorrectFeedback?: (correctAnswer: number) => void;
   disabled?: boolean;
 }
 
@@ -19,11 +19,14 @@ export function GroupedCountQuestion({
   task, 
   onAnswer, 
   onVoicePrompt,
+  onCorrectFeedback,
+  onIncorrectFeedback,
   disabled = false 
 }: GroupedCountQuestionProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
-  const sounds = useSoundEffects();
+  const [showConfetti, setShowConfetti] = useState(false);
+  const sounds = useImmersiveSounds();
   const { guardedHandler, lockInteractions } = useInputFocusGuard();
 
   const correctAnswer = task.bundleCount * task.bundleSize + task.looseCount;
@@ -36,171 +39,194 @@ export function GroupedCountQuestion({
   const handleOptionClick = guardedHandler((value: number) => {
     if (disabled || showResult) return;
 
-    sounds.tap();
+    sounds.bubble();
     setSelectedAnswer(value);
     setShowResult(true);
-    lockInteractions(1500);
+    lockInteractions(2500);
 
     const isCorrect = value === correctAnswer;
     
     if (isCorrect) {
-      sounds.correct();
+      sounds.celebration();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+      onCorrectFeedback?.();
     } else {
-      sounds.incorrect();
+      sounds.oops();
+      onIncorrectFeedback?.(correctAnswer);
     }
 
     // Wait for animation then submit
     setTimeout(() => {
       onAnswer(value, isCorrect);
-    }, 1500);
+    }, 2500);
   });
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="question-card max-w-2xl mx-auto"
-    >
-      {/* Question */}
-      <h2 className="text-child-lg text-center font-bold text-foreground mb-6">
-        {task.instruction}
-      </h2>
-
-      {/* Visual Representation */}
-      <div className="relative bg-muted/30 rounded-3xl p-6 mb-8">
-        <div className="flex items-center justify-center gap-8">
-          {/* Bundle(s) */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-col items-center gap-2"
-          >
-            <div className="relative">
-              <img 
-                src={sticksImg}
-                alt={`Bundle of ${task.bundleSize}`}
-                className="h-32 object-contain"
-              />
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.3 }}
-                className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold"
-              >
-                {task.bundleSize}
-              </motion.div>
-            </div>
-            <span className="text-sm text-muted-foreground font-medium">
-              {task.bundleCount} bundle{task.bundleCount > 1 ? 's' : ''} of {task.bundleSize}
-            </span>
-          </motion.div>
-
-          {/* Plus sign */}
-          <motion.span
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-child-xl font-bold text-muted-foreground"
-          >
-            +
-          </motion.span>
-
-          {/* Loose sticks */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-col items-center gap-2"
-          >
-            <div className="flex gap-1">
-              {Array.from({ length: task.looseCount }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 + i * 0.1 }}
-                  className="w-3 h-24 bg-amber-600 rounded-sm shadow-md"
-                />
-              ))}
-            </div>
-            <span className="text-sm text-muted-foreground font-medium">
-              {task.looseCount} loose stick{task.looseCount > 1 ? 's' : ''}
-            </span>
-          </motion.div>
-        </div>
-
-        {/* Equation hint */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
+    <>
+      {showConfetti && <Confetti />}
+      
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className="question-card max-w-2xl mx-auto"
+      >
+        {/* Question */}
+        <motion.h2 
+          className="text-child-lg text-center font-bold text-foreground mb-6"
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="mt-4 text-center text-muted-foreground"
         >
-          <span className="text-child-base">
-            {task.bundleSize} + {task.looseCount} = ?
-          </span>
-        </motion.div>
-      </div>
+          {task.instruction}
+        </motion.h2>
 
-      {/* Answer Options */}
-      <div className="grid grid-cols-3 gap-4">
-        <AnimatePresence mode="wait">
-          {task.options.map((option, index) => {
-            const isSelected = selectedAnswer === option.value;
-            const isCorrect = option.value === correctAnswer;
-            
-            let state: 'default' | 'selected' | 'correct' | 'incorrect' = 'default';
-            if (showResult) {
-              if (isCorrect) state = 'correct';
-              else if (isSelected) state = 'incorrect';
-            } else if (isSelected) {
-              state = 'selected';
-            }
+        {/* Visual Representation with Animated Sticks */}
+        <motion.div 
+          className="relative bg-gradient-to-b from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20 rounded-3xl p-8 mb-8"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          <AnimatedSticks 
+            bundleSize={task.bundleSize} 
+            looseCount={task.looseCount} 
+          />
 
-            return (
-              <motion.button
-                key={option.value}
-                onClick={() => handleOptionClick(option.value)}
-                disabled={disabled || showResult}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ 
-                  opacity: 1, 
-                  y: 0,
-                  scale: state === 'correct' ? 1.05 : 1
-                }}
-                transition={{ delay: 0.1 * index }}
-                whileHover={!showResult ? { scale: 1.05 } : {}}
-                whileTap={!showResult ? { scale: 0.95 } : {}}
-                className={cn(
-                  'answer-option',
-                  state === 'selected' && 'selected',
-                  state === 'correct' && 'correct glow-success',
-                  state === 'incorrect' && 'incorrect'
-                )}
-              >
-                <span className="text-child-xl font-bold">{option.label}</span>
-              </motion.button>
-            );
-          })}
-        </AnimatePresence>
-      </div>
-
-      {/* Feedback Animation */}
-      <AnimatePresence>
-        {showResult && selectedAnswer === correctAnswer && (
+          {/* Equation hint */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.2 }}
             className="mt-6 text-center"
           >
-            <span className="text-6xl">🎉</span>
-            <p className="text-success text-child-base font-bold mt-2">
-              You got it! {task.bundleSize} + {task.looseCount} = {correctAnswer}
-            </p>
+            <motion.div 
+              className="inline-flex items-center gap-2 bg-card px-6 py-3 rounded-full shadow-md"
+              whileHover={{ scale: 1.02 }}
+            >
+              <span className="text-child-lg font-bold text-primary">{task.bundleSize}</span>
+              <span className="text-child-base text-muted-foreground">+</span>
+              <span className="text-child-lg font-bold text-primary">{task.looseCount}</span>
+              <span className="text-child-base text-muted-foreground">=</span>
+              <motion.span 
+                className="text-child-lg font-bold text-success"
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+              >
+                ?
+              </motion.span>
+            </motion.div>
           </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+        </motion.div>
+
+        {/* Answer Options */}
+        <div className="grid grid-cols-3 gap-4">
+          <AnimatePresence mode="wait">
+            {task.options.map((option, index) => {
+              const isSelected = selectedAnswer === option.value;
+              const isCorrect = option.value === correctAnswer;
+              
+              let state: 'default' | 'selected' | 'correct' | 'incorrect' = 'default';
+              if (showResult) {
+                if (isCorrect) state = 'correct';
+                else if (isSelected) state = 'incorrect';
+              } else if (isSelected) {
+                state = 'selected';
+              }
+
+              return (
+                <motion.button
+                  key={option.value}
+                  onClick={() => handleOptionClick(option.value)}
+                  disabled={disabled || showResult}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ 
+                    opacity: 1, 
+                    y: 0,
+                    scale: state === 'correct' ? [1, 1.1, 1.05] : 1
+                  }}
+                  transition={{ delay: 0.4 + index * 0.1 }}
+                  whileHover={!showResult ? { scale: 1.05, y: -4 } : {}}
+                  whileTap={!showResult ? { scale: 0.95 } : {}}
+                  className={cn(
+                    'answer-option relative overflow-hidden',
+                    state === 'selected' && 'selected',
+                    state === 'correct' && 'correct glow-success',
+                    state === 'incorrect' && 'incorrect'
+                  )}
+                >
+                  <span className="text-child-xl font-bold">{option.label}</span>
+                  
+                  {/* Ripple effect */}
+                  {state === 'correct' && (
+                    <motion.div
+                      initial={{ scale: 0, opacity: 0.5 }}
+                      animate={{ scale: 4, opacity: 0 }}
+                      transition={{ duration: 0.6 }}
+                      className="absolute inset-0 bg-success rounded-full"
+                      style={{ transformOrigin: 'center' }}
+                    />
+                  )}
+                </motion.button>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+
+        {/* Feedback Animation */}
+        <AnimatePresence>
+          {showResult && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={cn(
+                'mt-6 p-4 rounded-2xl text-center',
+                selectedAnswer === correctAnswer
+                  ? 'bg-success/20' 
+                  : 'bg-warning/20'
+              )}
+            >
+              {selectedAnswer === correctAnswer ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-3">
+                    <motion.span 
+                      className="text-5xl"
+                      animate={{ rotate: [0, -10, 10, 0] }}
+                      transition={{ duration: 0.5, repeat: 2 }}
+                    >
+                      🎉
+                    </motion.span>
+                    <span className="text-child-base font-bold text-success">
+                      Brilliant!
+                    </span>
+                    <motion.span 
+                      className="text-5xl"
+                      animate={{ rotate: [0, 10, -10, 0] }}
+                      transition={{ duration: 0.5, repeat: 2 }}
+                    >
+                      🌟
+                    </motion.span>
+                  </div>
+                  <span className="text-muted-foreground">
+                    {task.bundleSize} + {task.looseCount} = {correctAnswer}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-4xl">💪</span>
+                  <span className="text-child-base font-bold text-warning">
+                    Good try! The answer is {correctAnswer}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {task.bundleSize} + {task.looseCount} = {correctAnswer}
+                  </span>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </>
   );
 }

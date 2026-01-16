@@ -13,21 +13,18 @@ import {
 } from '@dnd-kit/core';
 import { cn } from '@/lib/utils';
 import type { Level2TaskA } from '@/types/diagnostic';
-import { useSoundEffects } from '@/hooks/useSoundEffects';
+import { useImmersiveSounds } from '@/hooks/useImmersiveSounds';
 import { useInputFocusGuard } from '@/hooks/useInputFocusGuard';
 import { Button } from '@/components/ui/button';
 import { Check, RotateCcw } from 'lucide-react';
-
-// Import dice images
-import dice1 from '@/assets/diagnostic/dice_1.png';
-import dice2 from '@/assets/diagnostic/dice_2.png';
-import dice3 from '@/assets/diagnostic/dice_3.png';
-import dice4 from '@/assets/diagnostic/dice_4.png';
+import { AnimatedDice, Confetti } from './AnimatedVisuals';
 
 interface DragDropQuestionProps {
   task: Level2TaskA;
   onAnswer: (matches: Record<number, string>, isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
+  onCorrectFeedback?: () => void;
+  onIncorrectFeedback?: (explanation: string) => void;
   disabled?: boolean;
 }
 
@@ -45,17 +42,19 @@ function DraggableNumber({ value, isPlaced }: { value: number; isPlaced: boolean
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      initial={{ opacity: 0, scale: 0 }}
-      animate={{ opacity: isDragging ? 0.5 : 1, scale: 1 }}
-      whileHover={{ scale: 1.05 }}
+      initial={{ opacity: 0, scale: 0, rotate: -10 }}
+      animate={{ opacity: isDragging ? 0.5 : 1, scale: 1, rotate: 0 }}
+      whileHover={{ scale: 1.1, rotate: 5 }}
       whileTap={{ scale: 0.95 }}
       className={cn(
-        'w-20 h-20 rounded-2xl bg-primary text-primary-foreground',
+        'w-20 h-20 rounded-2xl',
+        'bg-gradient-to-br from-primary to-primary/80 text-primary-foreground',
         'flex items-center justify-center text-child-xl font-bold',
         'shadow-lg cursor-grab active:cursor-grabbing',
         'touch-manipulation select-none',
         isDragging && 'opacity-50'
       )}
+      style={{ boxShadow: '0 8px 20px -4px hsl(var(--primary) / 0.4)' }}
     >
       {value}
     </motion.div>
@@ -66,14 +65,12 @@ function DraggableNumber({ value, isPlaced }: { value: number; isPlaced: boolean
 function DroppableZone({ 
   groupId, 
   count, 
-  imageUrl, 
   placedValue,
   isCorrect,
   showResult 
 }: { 
   groupId: string; 
   count: number; 
-  imageUrl: string;
   placedValue: number | null;
   isCorrect: boolean | null;
   showResult: boolean;
@@ -83,15 +80,6 @@ function DroppableZone({
     data: { count },
   });
 
-  // Map image URLs to actual imports
-  const getImageSrc = (url: string) => {
-    if (url.includes('dice_1')) return dice1;
-    if (url.includes('dice_2')) return dice2;
-    if (url.includes('dice_3')) return dice3;
-    if (url.includes('dice_4')) return dice4;
-    return url;
-  };
-
   return (
     <motion.div
       ref={setNodeRef}
@@ -99,41 +87,59 @@ function DroppableZone({
       animate={{ opacity: 1, y: 0 }}
       className={cn(
         'relative flex flex-col items-center gap-3 p-4 rounded-3xl',
-        'border-4 border-dashed transition-all',
+        'border-4 border-dashed transition-all duration-300',
         isOver && 'border-primary bg-primary/10 scale-105',
         !isOver && 'border-muted-foreground/30 bg-card',
         showResult && isCorrect === true && 'border-success bg-success/10 glow-success',
         showResult && isCorrect === false && 'border-destructive bg-destructive/10'
       )}
     >
-      {/* Object group image */}
-      <div className="relative w-24 h-24 flex items-center justify-center">
-        <img 
-          src={getImageSrc(imageUrl)} 
-          alt={`Group of ${count}`}
-          className="max-w-full max-h-full object-contain"
-        />
-      </div>
+      {/* Animated Dice */}
+      <motion.div 
+        className="relative"
+        animate={isOver ? { scale: 1.1 } : { scale: 1 }}
+      >
+        <AnimatedDice value={count} size={70} />
+      </motion.div>
 
       {/* Drop target / placed number */}
       <div className={cn(
-        'w-16 h-16 rounded-xl border-2 border-dashed',
-        'flex items-center justify-center',
+        'w-14 h-14 rounded-xl border-2 border-dashed',
+        'flex items-center justify-center transition-all',
         placedValue ? 'bg-primary/20 border-primary' : 'bg-muted/50 border-muted-foreground/30'
       )}>
         {placedValue !== null && (
           <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
             className="text-child-lg font-bold text-primary"
           >
             {placedValue}
           </motion.span>
         )}
         {placedValue === null && (
-          <span className="text-muted-foreground text-sm">?</span>
+          <motion.span 
+            className="text-muted-foreground text-2xl"
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          >
+            ?
+          </motion.span>
         )}
       </div>
+      
+      {/* Result indicator */}
+      {showResult && (
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="absolute -top-2 -right-2"
+        >
+          <span className="text-2xl">
+            {isCorrect ? '✅' : '❌'}
+          </span>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -142,15 +148,17 @@ export function DragDropQuestion({
   task, 
   onAnswer, 
   onVoicePrompt,
+  onCorrectFeedback,
+  onIncorrectFeedback,
   disabled = false 
 }: DragDropQuestionProps) {
-  // Map: placed number value -> group id
   const [placements, setPlacements] = useState<Record<number, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [results, setResults] = useState<Record<string, boolean>>({});
+  const [showConfetti, setShowConfetti] = useState(false);
   
-  const sounds = useSoundEffects();
+  const sounds = useImmersiveSounds();
   const { lockInteractions } = useInputFocusGuard();
 
   const sensors = useSensors(
@@ -169,7 +177,7 @@ export function DragDropQuestion({
   const handleDragStart = (event: DragStartEvent) => {
     if (disabled || showResult) return;
     setActiveId(event.active.id as string);
-    sounds.pop();
+    sounds.sticky();
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -178,7 +186,10 @@ export function DragDropQuestion({
     setActiveId(null);
     const { active, over } = event;
     
-    if (!over) return;
+    if (!over) {
+      sounds.whoosh();
+      return;
+    }
 
     const numberValue = active.data.current?.value as number;
     const groupId = over.id as string;
@@ -186,19 +197,17 @@ export function DragDropQuestion({
     // Remove previous placement of this number
     setPlacements(prev => {
       const newPlacements = { ...prev };
-      // If this number was placed elsewhere, remove it
       delete newPlacements[numberValue];
-      // Place in new location
       newPlacements[numberValue] = groupId;
       return newPlacements;
     });
     
-    sounds.tap();
+    sounds.drop();
   };
 
   const handleReset = () => {
     if (disabled || showResult) return;
-    sounds.pop();
+    sounds.whoosh();
     setPlacements({});
   };
 
@@ -206,14 +215,13 @@ export function DragDropQuestion({
     if (disabled || showResult) return;
     
     setShowResult(true);
-    lockInteractions(2000);
+    lockInteractions(2500);
 
     // Check each placement
     const newResults: Record<string, boolean> = {};
     let allCorrect = true;
 
     task.objectGroups.forEach(group => {
-      // Find which number was placed on this group
       const placedNumber = Object.entries(placements).find(
         ([_, gId]) => gId === group.id
       )?.[0];
@@ -227,14 +235,19 @@ export function DragDropQuestion({
     setResults(newResults);
 
     if (allCorrect) {
-      sounds.celebrate();
+      sounds.celebration();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+      onCorrectFeedback?.();
     } else {
-      sounds.incorrect();
+      sounds.oops();
+      const wrongCount = Object.values(newResults).filter(r => !r).length;
+      onIncorrectFeedback?.(`${wrongCount} match${wrongCount > 1 ? 'es were' : ' was'} incorrect`);
     }
 
     setTimeout(() => {
       onAnswer(placements, allCorrect);
-    }, 2000);
+    }, 2500);
   };
 
   const allPlaced = task.numberSlots.every(slot => 
@@ -252,6 +265,8 @@ export function DragDropQuestion({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
+      {showConfetti && <Confetti />}
+      
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -259,18 +274,37 @@ export function DragDropQuestion({
         className="question-card max-w-4xl mx-auto"
       >
         {/* Question */}
-        <h2 className="text-child-lg text-center font-bold text-foreground mb-6">
+        <motion.h2 
+          className="text-child-lg text-center font-bold text-foreground mb-6"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           {task.instruction}
-        </h2>
+        </motion.h2>
+
+        {/* Instructions hint */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="text-center text-muted-foreground mb-4"
+        >
+          Drag each number to the matching group! 🎯
+        </motion.p>
 
         {/* Draggable Numbers */}
-        <div className="flex items-center justify-center gap-4 mb-8">
+        <motion.div 
+          className="flex items-center justify-center gap-4 mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
           {task.numberSlots.map((slot, index) => (
             <motion.div
               key={slot.value}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 + index * 0.1, type: 'spring' }}
             >
               <DraggableNumber
                 value={slot.value}
@@ -278,7 +312,7 @@ export function DragDropQuestion({
               />
             </motion.div>
           ))}
-        </div>
+        </motion.div>
 
         {/* Drop Zones */}
         <div className="grid grid-cols-3 gap-6 mb-8">
@@ -287,12 +321,11 @@ export function DragDropQuestion({
               key={group.id}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 + index * 0.1 }}
+              transition={{ delay: 0.4 + index * 0.1 }}
             >
               <DroppableZone
                 groupId={group.id}
                 count={group.count}
-                imageUrl={group.imageUrl}
                 placedValue={getPlacedValueForGroup(group.id)}
                 isCorrect={showResult ? results[group.id] : null}
                 showResult={showResult}
@@ -320,7 +353,7 @@ export function DragDropQuestion({
             disabled={disabled || showResult || !allPlaced}
             className={cn(
               'btn-child bg-primary text-primary-foreground',
-              allPlaced && 'bg-success hover:bg-success/90'
+              allPlaced && 'bg-success hover:bg-success/90 animate-pulse'
             )}
           >
             <Check className="w-5 h-5 mr-2" />
@@ -336,15 +369,40 @@ export function DragDropQuestion({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               className={cn(
-                'mt-6 p-4 rounded-2xl text-center text-child-base font-bold',
+                'mt-6 p-4 rounded-2xl text-center',
                 Object.values(results).every(Boolean) 
-                  ? 'bg-success/20 text-success' 
-                  : 'bg-warning/20 text-warning'
+                  ? 'bg-success/20' 
+                  : 'bg-warning/20'
               )}
             >
-              {Object.values(results).every(Boolean)
-                ? '🎉 Amazing! You matched them all correctly!'
-                : "Some matches weren't quite right. Let's learn more!"}
+              {Object.values(results).every(Boolean) ? (
+                <div className="flex items-center justify-center gap-3">
+                  <motion.span 
+                    className="text-5xl"
+                    animate={{ rotate: [0, 360] }}
+                    transition={{ duration: 1 }}
+                  >
+                    🎲
+                  </motion.span>
+                  <span className="text-child-base font-bold text-success">
+                    Amazing! You matched them all!
+                  </span>
+                  <motion.span 
+                    className="text-5xl"
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ duration: 0.5, repeat: 2 }}
+                  >
+                    ⭐
+                  </motion.span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-4xl">🎯</span>
+                  <span className="text-child-base font-bold text-warning">
+                    Some matches need fixing. Keep practicing!
+                  </span>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -353,9 +411,13 @@ export function DragDropQuestion({
       {/* Drag Overlay */}
       <DragOverlay>
         {activeId && (
-          <div className="w-20 h-20 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center text-child-xl font-bold shadow-2xl">
+          <motion.div 
+            initial={{ scale: 1 }}
+            animate={{ scale: 1.1, rotate: 5 }}
+            className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground flex items-center justify-center text-child-xl font-bold shadow-2xl"
+          >
             {activeId.replace('number-', '')}
-          </div>
+          </motion.div>
         )}
       </DragOverlay>
     </DndContext>
