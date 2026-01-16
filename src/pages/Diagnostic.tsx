@@ -319,9 +319,12 @@ export default function Diagnostic() {
               size="icon"
               onClick={bgMusic.toggle}
               className="rounded-full"
-              title={bgMusic.isPlaying ? 'Pause music' : 'Play music'}
+              title={bgMusic.isLoading ? 'Generating music...' : bgMusic.isPlaying ? 'Pause music' : 'Play music'}
+              disabled={bgMusic.isLoading}
             >
-              {bgMusic.isPlaying ? (
+              {bgMusic.isLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              ) : bgMusic.isPlaying ? (
                 <Music className="w-5 h-5 text-primary" />
               ) : (
                 <Music2 className="w-5 h-5 text-muted-foreground" />
