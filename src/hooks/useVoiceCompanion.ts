@@ -51,6 +51,12 @@ export function useVoiceCompanion(options: UseVoiceCompanionOptions = {}) {
     setError(null);
 
     try {
+      // Get the user's session token for proper authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
         {
@@ -58,7 +64,7 @@ export function useVoiceCompanion(options: UseVoiceCompanionOptions = {}) {
           headers: {
             'Content-Type': 'application/json',
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ 
             text: message.text, 
