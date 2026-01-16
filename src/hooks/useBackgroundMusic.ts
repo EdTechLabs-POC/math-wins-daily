@@ -4,15 +4,11 @@ interface UseBackgroundMusicOptions {
   autoPlay?: boolean;
 }
 
-// Multiple royalty-free children's learning music options as fallbacks
-const BACKGROUND_MUSIC_URLS = [
-  'https://cdn.pixabay.com/audio/2024/11/04/audio_c978921b66.mp3',
-  'https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3',
-  'https://cdn.pixabay.com/audio/2024/02/14/audio_78e10a4d0e.mp3',
-];
+// Local royalty-free background music file
+const BACKGROUND_MUSIC_URL = '/audio/background-music.mp3';
 
 /**
- * Background music hook using royalty-free ambient tracks
+ * Background music hook using a local ambient track
  * Plays a child-friendly, mellow loop for learning sessions
  */
 export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
@@ -22,39 +18,16 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [volume, setVolumeState] = useState(0.15);
   const [error, setError] = useState<string | null>(null);
-  const currentUrlIndexRef = useRef(0);
-
-  const createAudio = useCallback((url: string) => {
-    const audio = new Audio();
-    audio.crossOrigin = 'anonymous';
-    audio.loop = true;
-    audio.volume = volume;
-    audio.preload = 'auto';
-    audio.src = url;
-    return audio;
-  }, [volume]);
-
-  const tryNextUrl = useCallback(() => {
-    currentUrlIndexRef.current++;
-    if (currentUrlIndexRef.current < BACKGROUND_MUSIC_URLS.length) {
-      const nextUrl = BACKGROUND_MUSIC_URLS[currentUrlIndexRef.current];
-      console.log('Trying next music URL:', nextUrl);
-      if (audioRef.current) {
-        audioRef.current.src = nextUrl;
-        audioRef.current.load();
-      }
-      return true;
-    }
-    return false;
-  }, []);
 
   const initializeAudio = useCallback(() => {
     if (audioRef.current) return audioRef.current;
 
-    const url = BACKGROUND_MUSIC_URLS[currentUrlIndexRef.current];
-    console.log('Initializing background music:', url);
+    console.log('Initializing background music from:', BACKGROUND_MUSIC_URL);
     
-    const audio = createAudio(url);
+    const audio = new Audio(BACKGROUND_MUSIC_URL);
+    audio.loop = true;
+    audio.volume = volume;
+    audio.preload = 'auto';
 
     audio.onplay = () => {
       console.log('Background music playing');
@@ -67,22 +40,19 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
     };
     
     audio.oncanplaythrough = () => {
-      console.log('Background music ready to play');
+      console.log('Background music ready');
       setIsLoading(false);
     };
     
     audio.onerror = (e) => {
-      console.error('Background music error:', e);
-      // Try next URL
-      if (!tryNextUrl()) {
-        setError('Failed to load background music');
-        setIsLoading(false);
-      }
+      console.error('Background music load error:', e);
+      setError('Failed to load music');
+      setIsLoading(false);
     };
 
     audioRef.current = audio;
     return audio;
-  }, [createAudio, tryNextUrl]);
+  }, [volume]);
 
   const play = useCallback(async () => {
     try {
@@ -90,37 +60,25 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
       setError(null);
       
       const audio = initializeAudio();
-      
-      // Ensure audio is loaded
-      if (audio.readyState < 2) {
-        audio.load();
-      }
 
       const playPromise = audio.play();
       
       if (playPromise !== undefined) {
         await playPromise;
-        console.log('Background music started successfully');
+        console.log('Background music started');
       }
     } catch (err) {
       console.error('Background music play error:', err);
-      
-      // Try next URL on play error
-      if (tryNextUrl() && audioRef.current) {
-        try {
-          audioRef.current.load();
-          await audioRef.current.play();
-        } catch {
-          setError('Could not play background music');
-        }
+      // NotAllowedError is expected if user hasn't interacted yet
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        setError('Click Play to start music');
       } else {
-        // Browser may block autoplay - this is expected on first interaction
-        setError('Click to enable music');
+        setError('Could not play music');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [initializeAudio, tryNextUrl]);
+  }, [initializeAudio]);
 
   const pause = useCallback(() => {
     if (audioRef.current) {
@@ -156,7 +114,7 @@ export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
     };
   }, []);
 
-  // Auto-play if enabled (requires user interaction first due to browser policies)
+  // Auto-play if enabled
   useEffect(() => {
     if (autoPlay && !isPlaying && !isLoading) {
       const timer = setTimeout(() => {
