@@ -1,6 +1,6 @@
 # NumberSense MCP Server
 
-MCP (Model Context Protocol) server for analyzing student maths progress, validating questions against UK Year 3 curriculum, and benchmarking question quality.
+MCP (Model Context Protocol) HTTP server for analyzing student maths progress, validating questions against UK Year 3 curriculum, and benchmarking question quality.
 
 ## Quick Start
 
@@ -11,19 +11,41 @@ npm run build
 npm start
 ```
 
+The server runs on `http://localhost:3000` (or `PORT` env variable).
+
+## Endpoints
+
+- `POST /mcp` - MCP protocol endpoint (handles initialize, tools/list, tools/call)
+- `GET /health` - Health check endpoint
+
 ## Dedalus Configuration
 
-Add to your Dedalus MCP settings:
+Configure your Dedalus MCP settings to point to the deployed HTTP server:
 
 ```json
 {
   "mcpServers": {
     "numbersense": {
-      "command": "node",
-      "args": ["/path/to/mcp-tools/dist/index.js"]
+      "url": "https://your-deployed-server.com/mcp"
     }
   }
 }
+```
+
+## Local Development
+
+```bash
+# Build and run
+npm run build
+npm start
+
+# Test the health endpoint
+curl http://localhost:3000/health
+
+# Test MCP tools/list
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
 ## Available Tools
