@@ -1,99 +1,110 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+
+interface UseBackgroundMusicOptions {
+  autoPlay?: boolean;
+}
 
 /**
- * Background music hook using Web Audio API
- * Creates a mellow, non-distracting ambient loop perfect for kids
+ * Background music hook using ElevenLabs AI-generated music
+ * Generates a child-friendly, mellow loop for learning sessions
  */
-export function useBackgroundMusic() {
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const oscillatorsRef = useRef<OscillatorNode[]>([]);
+export function useBackgroundMusic(options: UseBackgroundMusicOptions = {}) {
+  const { autoPlay = false } = options;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolumeState] = useState(0.15);
+  const [isLoading, setIsLoading] = useState(false);
+  const [volume, setVolumeState] = useState(0.2);
+  const [error, setError] = useState<string | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const hasGeneratedRef = useRef(false);
 
-  const initAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      gainNodeRef.current = audioContextRef.current.createGain();
-      gainNodeRef.current.connect(audioContextRef.current.destination);
-      gainNodeRef.current.gain.value = volume;
+  // Music prompt for child-friendly learning ambient
+  const MUSIC_PROMPT = "Gentle, calming children's background music with soft piano and light synthesizer pads. Playful but not distracting, suitable for focus and learning. Loopable ambient track with a positive, encouraging mood. No vocals.";
+
+  const generateAndPlay = useCallback(async () => {
+    // If we already have generated audio, just play it
+    if (audioUrlRef.current && audioRef.current) {
+      audioRef.current.play();
+      setIsPlaying(true);
+      return;
     }
-    return audioContextRef.current;
-  }, [volume]);
 
-  // Create a mellow ambient pad sound
-  const createAmbientPad = useCallback(() => {
-    const ctx = initAudioContext();
-    if (!ctx || !gainNodeRef.current) return;
+    // Only generate once per session
+    if (hasGeneratedRef.current || isLoading) return;
+    hasGeneratedRef.current = true;
 
-    // Stop existing oscillators
-    oscillatorsRef.current.forEach(osc => {
-      try { osc.stop(); } catch {}
-    });
-    oscillatorsRef.current = [];
+    setIsLoading(true);
+    setError(null);
 
-    // Create layered ambient sound
-    // Using pentatonic scale for pleasant, child-friendly tones
-    const frequencies = [
-      130.81, // C3 - root
-      196.00, // G3 - fifth
-      261.63, // C4 - octave
-      329.63, // E4 - third
-    ];
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
 
-    frequencies.forEach((freq, index) => {
-      const oscillator = ctx.createOscillator();
-      const oscGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.value = freq;
-      
-      // Add slight detuning for warmth
-      oscillator.detune.value = (index % 2 === 0 ? 5 : -5);
-      
-      // Low-pass filter for soft, mellow sound
-      filter.type = 'lowpass';
-      filter.frequency.value = 400;
-      filter.Q.value = 1;
-      
-      // Very gentle volume per oscillator
-      oscGain.gain.value = 0.03;
-      
-      // Add subtle LFO for gentle movement
-      const lfo = ctx.createOscillator();
-      const lfoGain = ctx.createGain();
-      lfo.type = 'sine';
-      lfo.frequency.value = 0.1 + index * 0.05; // Very slow movement
-      lfoGain.gain.value = 0.005;
-      lfo.connect(lfoGain);
-      lfoGain.connect(oscGain.gain);
-      lfo.start();
-      
-      oscillator.connect(filter);
-      filter.connect(oscGain);
-      oscGain.connect(gainNodeRef.current!);
-      
-      oscillator.start();
-      oscillatorsRef.current.push(oscillator);
-    });
-  }, [initAudioContext]);
+      console.log('Generating background music...');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-music`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            prompt: MUSIC_PROMPT,
+            duration: 30, // 30 seconds, will loop
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to generate music');
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      audioUrlRef.current = audioUrl;
+
+      const audio = new Audio(audioUrl);
+      audio.loop = true;
+      audio.volume = volume;
+      audioRef.current = audio;
+
+      audio.onplay = () => setIsPlaying(true);
+      audio.onpause = () => setIsPlaying(false);
+      audio.onerror = () => {
+        setError('Failed to play music');
+        setIsPlaying(false);
+      };
+
+      await audio.play();
+      console.log('Background music started');
+    } catch (err) {
+      console.error('Background music error:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      hasGeneratedRef.current = false; // Allow retry
+    } finally {
+      setIsLoading(false);
+    }
+  }, [volume, isLoading]);
 
   const play = useCallback(() => {
-    const ctx = initAudioContext();
-    if (ctx?.state === 'suspended') {
-      ctx.resume();
+    if (audioRef.current && audioUrlRef.current) {
+      audioRef.current.play();
+      return;
     }
-    createAmbientPad();
-    setIsPlaying(true);
-  }, [initAudioContext, createAmbientPad]);
+    generateAndPlay();
+  }, [generateAndPlay]);
 
   const pause = useCallback(() => {
-    oscillatorsRef.current.forEach(osc => {
-      try { osc.stop(); } catch {}
-    });
-    oscillatorsRef.current = [];
-    setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
   }, []);
 
   const toggle = useCallback(() => {
@@ -105,30 +116,46 @@ export function useBackgroundMusic() {
   }, [isPlaying, play, pause]);
 
   const setVolume = useCallback((newVolume: number) => {
-    setVolumeState(newVolume);
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = newVolume;
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    setVolumeState(clampedVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = clampedVolume;
     }
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      oscillatorsRef.current.forEach(osc => {
-        try { osc.stop(); } catch {}
-      });
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
       }
     };
   }, []);
 
+  // Auto-play if enabled (requires user interaction first due to browser policies)
+  useEffect(() => {
+    if (autoPlay && !isPlaying && !isLoading && !hasGeneratedRef.current) {
+      // Delayed auto-play after a short time
+      const timer = setTimeout(() => {
+        generateAndPlay();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPlay, isPlaying, isLoading, generateAndPlay]);
+
   return {
     isPlaying,
+    isLoading,
     play,
     pause,
     toggle,
     volume,
     setVolume,
+    error,
   };
 }
