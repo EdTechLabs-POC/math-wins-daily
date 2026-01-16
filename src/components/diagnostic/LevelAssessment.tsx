@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -68,14 +68,44 @@ export function LevelAssessment({
   const [questionIndex, setQuestionIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(voiceEnabled);
+  
+  // Ref to track if initial fetch has happened
+  const hasInitializedRef = useRef(false);
+  const hasFetchedQuestionRef = useRef<Record<number, boolean>>({});
 
   const voice = useEnhancedVoiceCompanion({ enabled: voiceOn });
 
-  const fetchNextQuestion = useCallback(async () => {
+  const saveAssessment = async (level: string, confidence: number, responses: PreviousResponse[]) => {
+    try {
+      await supabase.from('level_assessments').insert([{
+        student_id: studentId,
+        assessment_type: 'initial',
+        questions_asked: JSON.parse(JSON.stringify(responses)),
+        responses: JSON.parse(JSON.stringify(responses)),
+        determined_level: level,
+        confidence_score: confidence,
+        completed_at: new Date().toISOString(),
+      }]);
+    } catch (err) {
+      console.error('Failed to save assessment:', err);
+    }
+  };
+
+  const fetchNextQuestion = useCallback(async (currentResponses: PreviousResponse[]) => {
+    // Prevent duplicate fetches for the same question index
+    if (hasFetchedQuestionRef.current[questionIndex]) {
+      console.log('Skipping duplicate fetch for question', questionIndex);
+      return;
+    }
+    hasFetchedQuestionRef.current[questionIndex] = true;
+    
     setIsLoading(true);
     setError(null);
     setSelectedAnswer(null);
     setShowFeedback(false);
+
+    // Stop any current speech before loading new question
+    voice.stop();
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -94,7 +124,7 @@ export function LevelAssessment({
           },
           body: JSON.stringify({
             studentAge,
-            previousResponses,
+            previousResponses: currentResponses,
             questionIndex,
           }),
         }
@@ -109,55 +139,44 @@ export function LevelAssessment({
 
       if (data.assessmentComplete && data.determinedLevel) {
         // Assessment is complete
-        await saveAssessment(data.determinedLevel, data.confidence);
+        await saveAssessment(data.determinedLevel, data.confidence, currentResponses);
         onComplete(data.determinedLevel, data.confidence);
         return;
       }
 
       setCurrentQuestion(data.question);
+      setIsLoading(false);
       
-      // Read the question aloud
+      // Read the question aloud after a short delay for animation
       if (voiceOn && data.question.voicePrompt) {
         setTimeout(() => {
           voice.readQuestion(data.question.voicePrompt);
-        }, 500);
+        }, 600);
       }
     } catch (err) {
       console.error('Assessment error:', err);
       setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
       setIsLoading(false);
+      // Allow retry on error
+      hasFetchedQuestionRef.current[questionIndex] = false;
     }
-  }, [studentAge, previousResponses, questionIndex, voiceOn, voice, onComplete]);
+  }, [studentAge, questionIndex, voiceOn, voice, onComplete, studentId]);
 
-  const saveAssessment = async (level: string, confidence: number) => {
-    try {
-      await supabase.from('level_assessments').insert([{
-        student_id: studentId,
-        assessment_type: 'initial',
-        questions_asked: JSON.parse(JSON.stringify(previousResponses)),
-        responses: JSON.parse(JSON.stringify(previousResponses)),
-        determined_level: level,
-        confidence_score: confidence,
-        completed_at: new Date().toISOString(),
-      }]);
-    } catch (err) {
-      console.error('Failed to save assessment:', err);
-    }
-  };
-
+  // Initial mount effect - welcome and fetch first question
   useEffect(() => {
-    // Welcome the student and start the assessment
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     if (voiceOn) {
       voice.welcome();
     }
     
     const timer = setTimeout(() => {
-      fetchNextQuestion();
-    }, voiceOn ? 3000 : 500);
+      fetchNextQuestion([]);
+    }, voiceOn ? 2500 : 500);
 
     return () => clearTimeout(timer);
-  }, []); // Only run on mount
+  }, []); // Empty deps - only run once on mount
 
   const handleAnswer = async (answer: number) => {
     if (showFeedback || !currentQuestion) return;
@@ -195,7 +214,7 @@ export function LevelAssessment({
   // Fetch next question when questionIndex changes (after the first question)
   useEffect(() => {
     if (questionIndex > 0) {
-      fetchNextQuestion();
+      fetchNextQuestion(previousResponses);
     }
   }, [questionIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -240,12 +259,17 @@ export function LevelAssessment({
     return currentQuestion.options;
   };
 
+  const handleRetry = () => {
+    hasFetchedQuestionRef.current[questionIndex] = false;
+    fetchNextQuestion(previousResponses);
+  };
+
   if (error) {
     return (
       <Card className="p-8 text-center max-w-md mx-auto">
         <h2 className="text-xl font-bold text-destructive mb-4">Oops!</h2>
         <p className="text-muted-foreground mb-6">{error}</p>
-        <Button onClick={() => fetchNextQuestion()}>Try Again</Button>
+        <Button onClick={handleRetry}>Try Again</Button>
       </Card>
     );
   }

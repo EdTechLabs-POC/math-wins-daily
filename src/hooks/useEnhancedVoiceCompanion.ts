@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface UseEnhancedVoiceCompanionOptions {
@@ -84,6 +84,22 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
+  const lastSpokenTextRef = useRef<string | null>(null);
+  const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      queueRef.current = [];
+    };
+  }, []);
 
   const processQueue = useCallback(async () => {
     if (isProcessingRef.current || queueRef.current.length === 0) return;
@@ -101,6 +117,8 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         }
 
         setIsLoading(true);
+        setError(null);
+        
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
           {
@@ -137,12 +155,14 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
             setIsSpeaking(false);
             onSpeakEnd?.();
             URL.revokeObjectURL(audioUrl);
+            audioRef.current = null;
             resolve();
           };
 
           audio.onerror = () => {
             setIsSpeaking(false);
             URL.revokeObjectURL(audioUrl);
+            audioRef.current = null;
             reject(new Error('Audio playback failed'));
           };
 
@@ -158,8 +178,18 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     isProcessingRef.current = false;
   }, [onSpeakStart, onSpeakEnd]);
 
-  const speak = useCallback(async (text: string, priority: boolean = false) => {
-    if (!enabled) return;
+  const speak = useCallback(async (text: string, options?: { priority?: boolean; allowDuplicate?: boolean }) => {
+    if (!enabled || !text.trim()) return;
+    
+    const { priority = false, allowDuplicate = false } = options || {};
+    
+    // Prevent duplicate consecutive messages (unless explicitly allowed)
+    if (!allowDuplicate && lastSpokenTextRef.current === text) {
+      console.log('Skipping duplicate TTS:', text.substring(0, 50));
+      return;
+    }
+    
+    lastSpokenTextRef.current = text;
     
     if (priority) {
       queueRef.current.unshift(text);
@@ -171,14 +201,34 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   }, [enabled, processQueue]);
 
   const stop = useCallback(() => {
+    // Clear the queue
     queueRef.current = [];
+    lastSpokenTextRef.current = null;
+    
+    // Clear any pending timeouts
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
+    
+    // Stop current audio
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.currentTime = 0;
       audioRef.current = null;
       setIsSpeaking(false);
       onSpeakEnd?.();
     }
+    
+    isProcessingRef.current = false;
   }, [onSpeakEnd]);
+
+  // Clear duplicate tracking when stopping (allows same text after explicit stop)
+  const clearAndSpeak = useCallback(async (text: string) => {
+    stop();
+    lastSpokenTextRef.current = null; // Reset so we can speak this text
+    await speak(text, { allowDuplicate: true });
+  }, [stop, speak]);
 
   // Helper to get random item from array
   const randomFrom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -186,7 +236,7 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   // Celebrate correct answer with random variation
   const celebrateCorrect = useCallback(async (customMessage?: string) => {
     const message = customMessage || randomFrom(CORRECT_CELEBRATIONS);
-    await speak(message);
+    await speak(message, { priority: true, allowDuplicate: true });
   }, [speak]);
 
   // Encourage after incorrect answer with random variation
@@ -196,13 +246,13 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   ) => {
     const intro = customMessage || randomFrom(INCORRECT_ENCOURAGEMENTS);
     const message = `${intro} The correct answer was ${correctAnswer}.`;
-    await speak(message);
+    await speak(message, { priority: true, allowDuplicate: true });
   }, [speak]);
 
   // Give a hint
   const giveHint = useCallback(async (hint: string) => {
     const intro = randomFrom(HINT_INTROS);
-    await speak(`${intro} ${hint}`);
+    await speak(`${intro} ${hint}`, { allowDuplicate: true });
   }, [speak]);
 
   // Introduce a new task
@@ -217,12 +267,12 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
 
   // Celebrate completing a level
   const celebrateLevelComplete = useCallback(async () => {
-    await speak(randomFrom(LEVEL_COMPLETE));
+    await speak(randomFrom(LEVEL_COMPLETE), { priority: true, allowDuplicate: true });
   }, [speak]);
 
   // Mid-session encouragement
   const encourage = useCallback(async () => {
-    await speak(randomFrom(MID_SESSION_ENCOURAGEMENTS));
+    await speak(randomFrom(MID_SESSION_ENCOURAGEMENTS), { allowDuplicate: true });
   }, [speak]);
 
   // Welcome the student
@@ -233,17 +283,18 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
       `Hello${name}! Ready for some fun math adventures?`,
       `Welcome back${name}! Let's discover some amazing things together!`,
     ];
-    await speak(randomFrom(messages));
+    await speak(randomFrom(messages), { allowDuplicate: true });
   }, [speak]);
 
-  // Read a question aloud
+  // Read a question aloud - with automatic stop of previous audio
   const readQuestion = useCallback(async (voicePrompt: string) => {
-    await speak(voicePrompt);
-  }, [speak]);
+    await clearAndSpeak(voicePrompt);
+  }, [clearAndSpeak]);
 
   return {
     speak,
     stop,
+    clearAndSpeak,
     celebrateCorrect,
     encourageIncorrect,
     giveHint,
