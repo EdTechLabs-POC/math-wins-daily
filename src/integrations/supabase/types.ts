@@ -329,6 +329,27 @@ export type Database = {
         }
         Relationships: []
       }
+      tts_usage: {
+        Row: {
+          character_count: number
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          character_count?: number
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          character_count?: number
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       question_bank_safe: {
@@ -369,7 +390,12 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      check_tts_rate_limit: { Args: { p_user_id: string }; Returns: number }
+      cleanup_old_tts_usage: { Args: never; Returns: undefined }
+      log_tts_usage: {
+        Args: { p_character_count: number; p_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       diagnostic_level: "level_1" | "level_2"
