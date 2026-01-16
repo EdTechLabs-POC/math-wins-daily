@@ -26,20 +26,34 @@ const CORRECT_CELEBRATIONS = [
   "Hooray! You're on a roll!",
   "Bravo! Keep up the fantastic work!",
   "You nailed it! I'm so proud of you!",
+  "Perfect! You're really getting the hang of this!",
+  "Spot on! Your counting skills are amazing!",
+  "That's exactly right! You're a quick learner!",
 ];
 
-// Gentle, supportive phrases for incorrect answers
+// Gentle, supportive phrases for incorrect answers - educational & varied
 const INCORRECT_ENCOURAGEMENTS = [
-  "I can see why you thought that! Let me show you another way to look at it.",
-  "That's a really good try! Here's a little secret that might help.",
-  "Oops! But you know what? Making mistakes is how we learn!",
-  "Almost there! Let's figure this out together.",
-  "Good thinking, but let's take another look at this one.",
-  "That's okay! Even the smartest people make mistakes sometimes.",
-  "Nice try! Here's a hint that might help you.",
-  "Not quite, but I love that you're trying! Let's work on this.",
-  "Hmm, that's close! Let me help you see it a different way.",
-  "Great effort! The answer is a little different, but you're learning!",
+  "That's a really good try! Let's count again together.",
+  "Almost! Mistakes help us learn. Let's look at it again.",
+  "Hmm, not quite. But that's okay! Let's see what the answer is.",
+  "Good effort! Sometimes counting can be tricky.",
+  "Nice try! Let's slow down and count one more time.",
+  "I see what you were thinking! Let's figure this out together.",
+  "Close! Let's take another peek at the numbers.",
+  "That's okay! Every try makes your brain stronger.",
+  "Almost there! Counting carefully helps us get it right.",
+  "Great thinking! Let's see the correct answer together.",
+  "No worries! Even mathematicians make mistakes sometimes.",
+  "That was a brave guess! Let's see what we get when we count carefully.",
+];
+
+// Explanatory phrases for grouped counting (bundles + loose items)
+const GROUPED_COUNT_EXPLANATIONS = [
+  "When we have a bundle, we add all the sticks in it to the loose ones.",
+  "First we count the bundle, then we add the extra sticks.",
+  "The bundle has sticks tied together. Adding the loose ones gives us the total.",
+  "We put together the bundle count and the loose count to find our answer.",
+  "Adding the group of sticks to the single sticks gives us the total.",
 ];
 
 // Hints and guidance phrases
@@ -49,15 +63,19 @@ const HINT_INTROS = [
   "Here's something that might help:",
   "Let me give you a hint:",
   "Think about this:",
+  "A helpful tip:",
 ];
 
-// Task introduction phrases
+// Task introduction phrases - varied to avoid repetition
 const TASK_INTROS = [
   "Okay, here's a fun one for you!",
   "Let's try this next!",
   "Here comes a new challenge!",
   "Are you ready? Here we go!",
   "Time for your next adventure!",
+  "Let's see what we have here!",
+  "Ooh, this one looks interesting!",
+  "Ready for another one? Let's do it!",
 ];
 
 // Level completion celebrations
@@ -67,6 +85,7 @@ const LEVEL_COMPLETE = [
   "Amazing! You've conquered this level! You're a champion!",
   "Fantastic work! You've mastered this level!",
   "You're a superstar! That level is done and dusted!",
+  "Brilliant! You've made it through! Keep up the great work!",
 ];
 
 // Encouragement during longer sessions
@@ -76,6 +95,7 @@ const MID_SESSION_ENCOURAGEMENTS = [
   "Your brain is getting stronger with every question!",
   "You're making great progress! I believe in you!",
   "Look at you go! You're becoming a math expert!",
+  "You're really focused today! That's awesome!",
 ];
 
 // Retry configuration
@@ -448,7 +468,15 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     customMessage?: string
   ) => {
     const intro = customMessage || randomFrom(INCORRECT_ENCOURAGEMENTS);
-    const message = `${intro} The correct answer was ${correctAnswer}.`;
+    // Vary how we reveal the correct answer
+    const answerReveal = randomFrom([
+      `The correct answer is ${correctAnswer}.`,
+      `It's ${correctAnswer}!`,
+      `The answer we were looking for is ${correctAnswer}.`,
+      `We get ${correctAnswer} when we count them all.`,
+      `If we count carefully, we find ${correctAnswer}.`,
+    ]);
+    const message = `${intro} ${answerReveal}`;
     await speak(message, { priority: true, allowDuplicate: true });
   }, [speak]);
 
