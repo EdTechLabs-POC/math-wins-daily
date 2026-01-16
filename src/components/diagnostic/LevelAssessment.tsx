@@ -70,9 +70,22 @@ export function LevelAssessment({
   const [voiceOn, setVoiceOn] = useState(voiceEnabled);
   const [canContinue, setCanContinue] = useState(false);
   
-  // Ref to track if initial fetch has happened
+  // Refs to prevent duplicate fetches + manage scheduled question-read
   const hasInitializedRef = useRef(false);
   const hasFetchedQuestionRef = useRef<Record<number, boolean>>({});
+  const latestQuestionIndexRef = useRef(0);
+  const questionReadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    latestQuestionIndexRef.current = questionIndex;
+  }, [questionIndex]);
+
+  const clearPendingQuestionRead = useCallback(() => {
+    if (questionReadTimeoutRef.current) {
+      clearTimeout(questionReadTimeoutRef.current);
+      questionReadTimeoutRef.current = null;
+    }
+  }, []);
 
   const voice = useEnhancedVoiceCompanion({ enabled: voiceOn });
 
@@ -99,13 +112,14 @@ export function LevelAssessment({
       return;
     }
     hasFetchedQuestionRef.current[questionIndex] = true;
-    
+
     setIsLoading(true);
     setError(null);
     setSelectedAnswer(null);
     setShowFeedback(false);
 
-    // Stop any current speech before loading new question
+    // Cancel any scheduled question read and stop any current speech before loading new question
+    clearPendingQuestionRead();
     voice.stop();
 
     try {
@@ -148,10 +162,14 @@ export function LevelAssessment({
       setCurrentQuestion(data.question);
       setIsLoading(false);
       setCanContinue(false);
-      
-      // Read the exact question instruction aloud after a short delay for animation
+
+      // Read the exact question instruction aloud after a short delay for animation.
+      // Guard against late timers speaking the *previous* question after the UI advances.
       if (voiceOn && data.question.instruction) {
-        setTimeout(() => {
+        const scheduledForIndex = questionIndex;
+        clearPendingQuestionRead();
+        questionReadTimeoutRef.current = setTimeout(() => {
+          if (latestQuestionIndexRef.current !== scheduledForIndex) return;
           voice.readQuestion(data.question.instruction);
         }, 600);
       }
@@ -162,7 +180,7 @@ export function LevelAssessment({
       // Allow retry on error
       hasFetchedQuestionRef.current[questionIndex] = false;
     }
-  }, [studentAge, questionIndex, voiceOn, voice, onComplete, studentId]);
+  }, [studentAge, questionIndex, voiceOn, voice, onComplete, studentId, clearPendingQuestionRead]);
 
   // Initial mount effect - welcome and fetch first question
   useEffect(() => {
@@ -172,7 +190,7 @@ export function LevelAssessment({
     if (voiceOn) {
       voice.welcome();
     }
-    
+
     const timer = setTimeout(() => {
       fetchNextQuestion([]);
     }, voiceOn ? 2500 : 500);
@@ -180,16 +198,22 @@ export function LevelAssessment({
     return () => clearTimeout(timer);
   }, []); // Empty deps - only run once on mount
 
+  // Cleanup any pending question-read timer on unmount
+  useEffect(() => {
+    return () => clearPendingQuestionRead();
+  }, [clearPendingQuestionRead]);
+
   const handleAnswer = async (answer: number) => {
     if (showFeedback || !currentQuestion) return;
 
-    // Stop any currently playing audio (like question reading)
+    // Stop any scheduled/playing audio (like question reading) before feedback
+    clearPendingQuestionRead();
     voice.stop();
 
     setSelectedAnswer(answer);
     setShowFeedback(true);
     setCanContinue(false); // Disable continue until feedback audio finishes
-    
+
     const correct = answer === currentQuestion.correctAnswer;
     setIsCorrect(correct);
 
@@ -209,12 +233,16 @@ export function LevelAssessment({
         await voice.encourageIncorrect(currentQuestion.correctAnswer);
       }
     }
-    
+
     // Now allow user to continue
     setCanContinue(true);
   };
 
   const handleContinue = () => {
+    // Immediately stop/cancel any lingering audio/timers so the next screen can't replay old text
+    clearPendingQuestionRead();
+    voice.stop();
+
     setQuestionIndex(prev => prev + 1);
     // This will trigger the useEffect to fetch the next question
   };

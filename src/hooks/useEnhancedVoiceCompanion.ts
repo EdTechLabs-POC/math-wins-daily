@@ -81,23 +81,40 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  type QueueItem = {
+    runId: number;
+    text: string;
+    resolve: () => void;
+    reject: (err: Error) => void;
+  };
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const queueRef = useRef<{ text: string; resolve: () => void; reject: (err: Error) => void }[]>([]);
+  const queueRef = useRef<QueueItem[]>([]);
   const isProcessingRef = useRef(false);
   const lastSpokenTextRef = useRef<string | null>(null);
-  const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Each stop() increments runId and aborts any in-flight request.
+  // This prevents a previous question from "finishing" and playing audio after the UI has moved on.
+  const runIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const forceResolvePlaybackRef = useRef<(() => void) | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (speakTimeoutRef.current) {
-        clearTimeout(speakTimeoutRef.current);
-      }
+      runIdRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+
+      forceResolvePlaybackRef.current?.();
+      forceResolvePlaybackRef.current = null;
+
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
-      // Reject any pending promises
+
       queueRef.current.forEach(item => item.resolve());
       queueRef.current = [];
     };
@@ -107,83 +124,141 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     if (isProcessingRef.current || queueRef.current.length === 0) return;
     isProcessingRef.current = true;
 
-    while (queueRef.current.length > 0) {
-      const item = queueRef.current.shift();
-      if (!item) continue;
+    try {
+      while (queueRef.current.length > 0) {
+        const item = queueRef.current.shift();
+        if (!item) continue;
 
-      const { text, resolve, reject } = item;
-
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          console.warn('No session for TTS');
-          resolve();
+        // If we stopped after this item was queued, skip it.
+        if (item.runId !== runIdRef.current) {
+          item.resolve();
           continue;
         }
 
-        setIsLoading(true);
-        setError(null);
-        
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ text }),
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.access_token) {
+            console.warn('No session for TTS');
+            item.resolve();
+            continue;
           }
-        );
 
-        setIsLoading(false);
+          setIsLoading(true);
+          setError(null);
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'TTS request failed');
+          const controller = new AbortController();
+          abortRef.current = controller;
+
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ text: item.text }),
+              signal: controller.signal,
+            }
+          );
+
+          abortRef.current = null;
+          setIsLoading(false);
+
+          // If we stopped while request was in-flight, do not play it.
+          if (item.runId !== runIdRef.current) {
+            item.resolve();
+            continue;
+          }
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'TTS request failed');
+          }
+
+          const audioBlob = await response.blob();
+
+          // If we stopped after receiving bytes, still skip playback.
+          if (item.runId !== runIdRef.current) {
+            item.resolve();
+            continue;
+          }
+
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          await new Promise<void>((audioResolve, audioReject) => {
+            // Cancel immediately if we're no longer the active run.
+            if (item.runId !== runIdRef.current) {
+              URL.revokeObjectURL(audioUrl);
+              audioResolve();
+              return;
+            }
+
+            const audio = new Audio(audioUrl);
+            audioRef.current = audio;
+
+            const cleanup = () => {
+              URL.revokeObjectURL(audioUrl);
+              if (audioRef.current === audio) audioRef.current = null;
+              forceResolvePlaybackRef.current = null;
+            };
+
+            // Allow stop() to resolve this promise (otherwise pause() doesn't trigger onended)
+            forceResolvePlaybackRef.current = () => {
+              try {
+                audio.pause();
+                audio.currentTime = 0;
+              } catch {
+                // ignore
+              }
+              setIsSpeaking(false);
+              onSpeakEnd?.();
+              cleanup();
+              audioResolve();
+            };
+
+            audio.onplay = () => {
+              setIsSpeaking(true);
+              onSpeakStart?.();
+            };
+
+            audio.onended = () => {
+              setIsSpeaking(false);
+              onSpeakEnd?.();
+              cleanup();
+              audioResolve();
+            };
+
+            audio.onerror = () => {
+              setIsSpeaking(false);
+              cleanup();
+              audioReject(new Error('Audio playback failed'));
+            };
+
+            audio.play().catch(audioReject);
+          });
+
+          item.resolve();
+        } catch (err) {
+          // AbortError is expected when stop() cancels in-flight requests
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            setIsLoading(false);
+            item.resolve();
+            continue;
+          }
+
+          console.error('TTS error:', err);
+          setError(err instanceof Error ? err.message : 'Unknown error');
+          setIsLoading(false);
+          item.resolve();
+        } finally {
+          abortRef.current = null;
         }
-
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        await new Promise<void>((audioResolve, audioReject) => {
-          const audio = new Audio(audioUrl);
-          audioRef.current = audio;
-
-          audio.onplay = () => {
-            setIsSpeaking(true);
-            onSpeakStart?.();
-          };
-
-          audio.onended = () => {
-            setIsSpeaking(false);
-            onSpeakEnd?.();
-            URL.revokeObjectURL(audioUrl);
-            audioRef.current = null;
-            audioResolve();
-          };
-
-          audio.onerror = () => {
-            setIsSpeaking(false);
-            URL.revokeObjectURL(audioUrl);
-            audioRef.current = null;
-            audioReject(new Error('Audio playback failed'));
-          };
-
-          audio.play().catch(audioReject);
-        });
-
-        resolve(); // Resolve the speak promise after audio completes
-      } catch (err) {
-        console.error('TTS error:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        setIsLoading(false);
-        resolve(); // Still resolve to prevent hanging
       }
+    } finally {
+      isProcessingRef.current = false;
     }
-
-    isProcessingRef.current = false;
   }, [onSpeakStart, onSpeakEnd]);
 
   const speak = useCallback((text: string, options?: { priority?: boolean; allowDuplicate?: boolean }): Promise<void> => {
@@ -192,52 +267,67 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
         resolve();
         return;
       }
-      
+
       const { priority = false, allowDuplicate = false } = options || {};
-      
+
       // Prevent duplicate consecutive messages (unless explicitly allowed)
       if (!allowDuplicate && lastSpokenTextRef.current === text) {
         console.log('Skipping duplicate TTS:', text.substring(0, 50));
         resolve();
         return;
       }
-      
+
       lastSpokenTextRef.current = text;
-      
-      const queueItem = { text, resolve, reject: () => resolve() };
-      
+
+      const queueItem: QueueItem = {
+        runId: runIdRef.current,
+        text,
+        resolve,
+        reject: () => resolve(),
+      };
+
       if (priority) {
         queueRef.current.unshift(queueItem);
       } else {
         queueRef.current.push(queueItem);
       }
-      
+
       processQueue();
     });
   }, [enabled, processQueue]);
 
   const stop = useCallback(() => {
+    // Invalidate any queued/in-flight audio so it can't play on the next question
+    runIdRef.current += 1;
+
     // Resolve all pending promises in queue
     queueRef.current.forEach(item => item.resolve());
     queueRef.current = [];
     lastSpokenTextRef.current = null;
-    
-    // Clear any pending timeouts
-    if (speakTimeoutRef.current) {
-      clearTimeout(speakTimeoutRef.current);
-      speakTimeoutRef.current = null;
+
+    // Abort any in-flight TTS request
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    // Force-resolve the current playback promise (prevents hung queue)
+    if (forceResolvePlaybackRef.current) {
+      forceResolvePlaybackRef.current();
+      forceResolvePlaybackRef.current = null;
+      return;
     }
-    
-    // Stop current audio
+
+    // Stop current audio (fallback)
     if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch {
+        // ignore
+      }
       audioRef.current = null;
       setIsSpeaking(false);
       onSpeakEnd?.();
     }
-    
-    isProcessingRef.current = false;
   }, [onSpeakEnd]);
 
   // Clear duplicate tracking when stopping (allows same text after explicit stop)
