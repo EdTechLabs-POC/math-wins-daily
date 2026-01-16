@@ -36,7 +36,8 @@ const ALLOWED_VOICE_IDS = [
 ];
 
 const MAX_TEXT_LENGTH = 1000; // Reasonable limit for educational TTS
-const RATE_LIMIT_PER_HOUR = 50; // Maximum TTS requests per user per hour
+// Increased to prevent normal assessment flows (question + feedback) from being rate-limited during testing.
+const RATE_LIMIT_PER_HOUR = 300; // Maximum TTS requests per user per hour
 
 serve(async (req) => {
   const origin = req.headers.get("origin");

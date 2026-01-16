@@ -303,7 +303,9 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     // Resolve all pending promises in queue
     queueRef.current.forEach(item => item.resolve());
     queueRef.current = [];
-    lastSpokenTextRef.current = null;
+
+    // IMPORTANT: do NOT reset lastSpokenTextRef here.
+    // We want accidental re-queues (e.g. previous question repeating) to be deduped.
 
     // Abort any in-flight TTS request
     abortRef.current?.abort();
@@ -393,10 +395,12 @@ export function useEnhancedVoiceCompanion(options: UseEnhancedVoiceCompanionOpti
     await speak(randomFrom(messages), { allowDuplicate: true });
   }, [speak]);
 
-  // Read a question aloud - with automatic stop of previous audio
-  const readQuestion = useCallback(async (voicePrompt: string) => {
-    await clearAndSpeak(voicePrompt);
-  }, [clearAndSpeak]);
+  // Read a question aloud
+  // NOTE: we intentionally keep duplicate protection ON here to avoid the previous-question repeat bug.
+  const readQuestion = useCallback(async (questionText: string) => {
+    stop();
+    await speak(questionText, { priority: true });
+  }, [stop, speak]);
 
   return {
     speak,

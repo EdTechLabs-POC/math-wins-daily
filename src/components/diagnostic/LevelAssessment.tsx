@@ -91,7 +91,9 @@ export function LevelAssessment({
 
   const saveAssessment = async (level: string, confidence: number, responses: PreviousResponse[]) => {
     try {
-      await supabase.from('level_assessments').insert([{
+      // The generated DB types for this project can lag behind the live schema.
+      // Cast the table name to avoid blocking runtime behavior.
+      await supabase.from('level_assessments' as any).insert([{
         student_id: studentId,
         assessment_type: 'initial',
         questions_asked: JSON.parse(JSON.stringify(responses)),
@@ -280,7 +282,6 @@ export function LevelAssessment({
   const renderOptions = () => {
     if (!currentQuestion?.options) {
       // Generate number options for counting questions
-      const max = Math.min(10, (currentQuestion?.correctAnswer || 5) + 3);
       const options = Array.from({ length: 4 }).map((_, i) => {
         const value = Math.max(1, (currentQuestion?.correctAnswer || 3) - 1 + i);
         return { value, label: String(value) };
