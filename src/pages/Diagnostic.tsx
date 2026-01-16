@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDiagnosticFlow } from '@/hooks/useDiagnosticFlow';
@@ -48,7 +48,7 @@ export default function Diagnostic() {
   const { readQuestion, celebrateCorrect, encourageIncorrect, celebrateLevelComplete, speak, stop } = voice;
   const sounds = useImmersiveSounds();
 
-  const feedbackPromiseRef = useRef<Promise<void> | null>(null);
+  
 
   const currentTask = getCurrentTask();
 
@@ -85,7 +85,8 @@ export default function Diagnostic() {
             setPhase('diagnostic');
           } else {
             // Check for existing level assessment
-            const { data: assessments } = await supabase
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: assessments } = await (supabase as any)
               .from('level_assessments')
               .select('id')
               .eq('student_id', student.id)
@@ -144,60 +145,51 @@ export default function Diagnostic() {
     readQuestion(text);
   }, [voiceEnabled, readQuestion]);
 
-  const handleCorrectFeedback = useCallback(() => {
+  const handleCorrectFeedback = useCallback(async (): Promise<void> => {
     if (!voiceEnabled) return;
     // Stop any question audio before feedback
     stop();
-    feedbackPromiseRef.current = celebrateCorrect();
+    await celebrateCorrect();
   }, [voiceEnabled, stop, celebrateCorrect]);
 
-  const handleIncorrectFeedback = useCallback((detail: number | string) => {
+  const handleIncorrectFeedback = useCallback(async (detail: number | string): Promise<void> => {
     if (!voiceEnabled) return;
     // Stop any question audio before feedback
     stop();
 
-    feedbackPromiseRef.current = typeof detail === 'number'
-      ? encourageIncorrect(detail)
-      : speak(`Good try! ${detail}. Let's take another look.`, { priority: true, allowDuplicate: true });
+    if (typeof detail === 'number') {
+      await encourageIncorrect(detail);
+    } else {
+      await speak(`Good try! ${detail}. Let's take another look.`, { priority: true, allowDuplicate: true });
+    }
   }, [voiceEnabled, stop, encourageIncorrect, speak]);
 
   const handleAnswer = useCallback((answer: unknown, isCorrect: boolean) => {
-    (async () => {
-      // Do not advance to the next task until feedback audio completes.
-      // (submitTaskResult drives routing to the next question)
-      const pendingFeedback = feedbackPromiseRef.current;
-      if (voiceEnabled && pendingFeedback) {
-        try {
-          await pendingFeedback;
-        } finally {
-          feedbackPromiseRef.current = null;
-        }
+    // The question components now await feedback audio before calling this,
+    // so we can immediately process the result.
+    const timeTaken = Math.round((Date.now() - startTime) / 1000);
+
+    const getCorrectAnswer = () => {
+      if (currentTask?.type === 'count_objects') return (currentTask as Level1TaskA).correctAnswer;
+      if (currentTask?.type === 'tap_count') return (currentTask as Level1TaskB).targetCount;
+      if (currentTask?.type === 'count_grouped') {
+        const task = currentTask as Level2TaskB;
+        return task.bundleCount * task.bundleSize + task.looseCount;
       }
+      return 'matches';
+    };
 
-      const timeTaken = Math.round((Date.now() - startTime) / 1000);
+    submitTaskResult({
+      taskId: currentTask?.taskId || '',
+      isCorrect,
+      studentAnswer: answer,
+      correctAnswer: getCorrectAnswer(),
+      timeTakenSeconds: timeTaken,
+      attemptNumber,
+    });
 
-      const getCorrectAnswer = () => {
-        if (currentTask?.type === 'count_objects') return (currentTask as Level1TaskA).correctAnswer;
-        if (currentTask?.type === 'tap_count') return (currentTask as Level1TaskB).targetCount;
-        if (currentTask?.type === 'count_grouped') {
-          const task = currentTask as Level2TaskB;
-          return task.bundleCount * task.bundleSize + task.looseCount;
-        }
-        return 'matches';
-      };
-
-      submitTaskResult({
-        taskId: currentTask?.taskId || '',
-        isCorrect,
-        studentAnswer: answer,
-        correctAnswer: getCorrectAnswer(),
-        timeTakenSeconds: timeTaken,
-        attemptNumber,
-      });
-
-      setAttemptNumber(prev => prev + 1);
-    })();
-  }, [currentTask, startTime, attemptNumber, submitTaskResult, voiceEnabled]);
+    setAttemptNumber(prev => prev + 1);
+  }, [currentTask, startTime, attemptNumber, submitTaskResult]);
 
   const handleRepairComplete = useCallback(() => {
     sounds.celebration();

@@ -91,9 +91,8 @@ export function LevelAssessment({
 
   const saveAssessment = async (level: string, confidence: number, responses: PreviousResponse[]) => {
     try {
-      // The generated DB types for this project can lag behind the live schema.
-      // Cast the table name to avoid blocking runtime behavior.
-      await supabase.from('level_assessments' as any).insert([{
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('level_assessments').insert([{
         student_id: studentId,
         assessment_type: 'initial',
         questions_asked: JSON.parse(JSON.stringify(responses)),

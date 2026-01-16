@@ -12,8 +12,8 @@ interface TapCountQuestionProps {
   task: Level1TaskB;
   onAnswer: (tappedIds: string[], isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
-  onCorrectFeedback?: () => void;
-  onIncorrectFeedback?: (correctAnswer: number) => void;
+  onCorrectFeedback?: () => Promise<void> | void;
+  onIncorrectFeedback?: (correctAnswer: number) => Promise<void> | void;
   disabled?: boolean;
 }
 
@@ -62,11 +62,11 @@ export function TapCountQuestion({
     setTappedIds(new Set());
   }, [disabled, showResult, sounds]);
 
-  const handleSubmit = guardedHandler(() => {
+  const handleSubmit = guardedHandler(async () => {
     if (disabled || showResult) return;
     
     setShowResult(true);
-    lockInteractions(2500);
+    lockInteractions(5000);
 
     const correct = tappedIds.size === task.targetCount;
     setIsCorrect(correct);
@@ -75,15 +75,23 @@ export function TapCountQuestion({
       sounds.celebration();
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3000);
-      onCorrectFeedback?.();
     } else {
       sounds.oops();
-      onIncorrectFeedback?.(task.targetCount);
     }
 
-    setTimeout(() => {
-      onAnswer(Array.from(tappedIds), correct);
-    }, 2500);
+    // Wait for feedback audio to complete before advancing
+    try {
+      if (correct) {
+        await onCorrectFeedback?.();
+      } else {
+        await onIncorrectFeedback?.(task.targetCount);
+      }
+    } catch {
+      // Audio may fail; continue anyway
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+    onAnswer(Array.from(tappedIds), correct);
   });
 
   const currentCount = tappedIds.size;
