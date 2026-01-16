@@ -23,8 +23,8 @@ interface DragDropQuestionProps {
   task: Level2TaskA;
   onAnswer: (matches: Record<number, string>, isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
-  onCorrectFeedback?: () => void;
-  onIncorrectFeedback?: (explanation: string) => void;
+  onCorrectFeedback?: () => Promise<void> | void;
+  onIncorrectFeedback?: (explanation: string) => Promise<void> | void;
   disabled?: boolean;
 }
 
@@ -211,11 +211,11 @@ export function DragDropQuestion({
     setPlacements({});
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (disabled || showResult) return;
     
     setShowResult(true);
-    lockInteractions(2500);
+    lockInteractions(5000);
 
     // Check each placement
     const newResults: Record<string, boolean> = {};
@@ -238,16 +238,24 @@ export function DragDropQuestion({
       sounds.celebration();
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3000);
-      onCorrectFeedback?.();
     } else {
       sounds.oops();
-      const wrongCount = Object.values(newResults).filter(r => !r).length;
-      onIncorrectFeedback?.(`${wrongCount} match${wrongCount > 1 ? 'es were' : ' was'} incorrect`);
     }
 
-    setTimeout(() => {
-      onAnswer(placements, allCorrect);
-    }, 2500);
+    // Wait for feedback audio to complete before advancing
+    try {
+      if (allCorrect) {
+        await onCorrectFeedback?.();
+      } else {
+        const wrongCount = Object.values(newResults).filter(r => !r).length;
+        await onIncorrectFeedback?.(`${wrongCount} match${wrongCount > 1 ? 'es were' : ' was'} incorrect`);
+      }
+    } catch {
+      // Audio may fail; continue anyway
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+    onAnswer(placements, allCorrect);
   };
 
   const allPlaced = task.numberSlots.every(slot => 

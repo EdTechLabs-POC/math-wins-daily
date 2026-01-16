@@ -10,8 +10,8 @@ interface CountingQuestionProps {
   task: Level1TaskA;
   onAnswer: (answer: number, isCorrect: boolean) => void;
   onVoicePrompt?: (text: string) => void;
-  onCorrectFeedback?: () => void;
-  onIncorrectFeedback?: (correctAnswer: number) => void;
+  onCorrectFeedback?: () => Promise<void> | void;
+  onIncorrectFeedback?: (correctAnswer: number) => Promise<void> | void;
   disabled?: boolean;
 }
 
@@ -34,13 +34,13 @@ export function CountingQuestion({
     onVoicePrompt?.(task.instruction);
   }, [task.instruction, onVoicePrompt]);
 
-  const handleOptionClick = guardedHandler((value: number) => {
+  const handleOptionClick = guardedHandler(async (value: number) => {
     if (disabled || showResult) return;
 
     sounds.bubble();
     setSelectedAnswer(value);
     setShowResult(true);
-    lockInteractions(2500);
+    lockInteractions(5000); // Lock longer; we'll unlock after audio
 
     const isCorrect = value === task.correctAnswer;
     
@@ -48,16 +48,24 @@ export function CountingQuestion({
       sounds.celebration();
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3000);
-      onCorrectFeedback?.();
     } else {
       sounds.oops();
-      onIncorrectFeedback?.(task.correctAnswer);
     }
 
-    // Wait for animation then submit
-    setTimeout(() => {
-      onAnswer(value, isCorrect);
-    }, 2500);
+    // Wait for feedback audio to complete before advancing
+    try {
+      if (isCorrect) {
+        await onCorrectFeedback?.();
+      } else {
+        await onIncorrectFeedback?.(task.correctAnswer);
+      }
+    } catch {
+      // Audio may fail; continue anyway
+    }
+
+    // Small visual pause after audio ends
+    await new Promise(r => setTimeout(r, 400));
+    onAnswer(value, isCorrect);
   });
 
   return (
