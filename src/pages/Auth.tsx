@@ -67,11 +67,11 @@ export default function Auth() {
   };
 
   const checkEmailAllowed = async (emailToCheck: string): Promise<boolean> => {
-    // Check if email exists in students table as parent_email
+    // Check if email exists in students table as parent_email (case-insensitive)
     const { data, error } = await supabase
       .from('students')
       .select('id')
-      .eq('parent_email', emailToCheck.toLowerCase().trim())
+      .ilike('parent_email', emailToCheck.trim())
       .limit(1);
     
     if (error) {
@@ -83,11 +83,11 @@ export default function Auth() {
   };
 
   const linkUserToStudent = async (userId: string, userEmail: string) => {
-    // Update the student record to link it to the authenticated user
+    // Update the student record to link it to the authenticated user (case-insensitive)
     const { error } = await supabase
       .from('students')
       .update({ user_id: userId })
-      .eq('parent_email', userEmail.toLowerCase().trim())
+      .ilike('parent_email', userEmail.trim())
       .is('user_id', null); // Only update if not already linked
     
     if (error) {
