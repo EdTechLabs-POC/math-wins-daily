@@ -180,6 +180,50 @@ export type Database = {
           },
         ]
       }
+      level_assessments: {
+        Row: {
+          assessment_type: string
+          completed_at: string | null
+          confidence_score: number | null
+          created_at: string
+          determined_level: string | null
+          id: string
+          questions_asked: Json
+          responses: Json
+          student_id: string
+        }
+        Insert: {
+          assessment_type?: string
+          completed_at?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          determined_level?: string | null
+          id?: string
+          questions_asked?: Json
+          responses?: Json
+          student_id: string
+        }
+        Update: {
+          assessment_type?: string
+          completed_at?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          determined_level?: string | null
+          id?: string
+          questions_asked?: Json
+          responses?: Json
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "level_assessments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_sessions: {
         Row: {
           completed_at: string | null
@@ -290,6 +334,56 @@ export type Database = {
         }
         Relationships: []
       }
+      student_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          day_number: number
+          id: string
+          questions_completed: Json | null
+          questions_correct: number | null
+          questions_total: number | null
+          session_date: string
+          student_id: string
+          time_spent_seconds: number | null
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          day_number: number
+          id?: string
+          questions_completed?: Json | null
+          questions_correct?: number | null
+          questions_total?: number | null
+          session_date?: string
+          student_id: string
+          time_spent_seconds?: number | null
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          day_number?: number
+          id?: string
+          questions_completed?: Json | null
+          questions_correct?: number | null
+          questions_total?: number | null
+          session_date?: string
+          student_id?: string
+          time_spent_seconds?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_progress_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       students: {
         Row: {
           age: number | null
@@ -349,6 +443,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      voice_feedback_log: {
+        Row: {
+          created_at: string
+          emotion: string | null
+          feedback_type: string
+          id: string
+          message_text: string
+          session_id: string | null
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          emotion?: string | null
+          feedback_type: string
+          id?: string
+          message_text: string
+          session_id?: string | null
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          emotion?: string | null
+          feedback_type?: string
+          id?: string
+          message_text?: string
+          session_id?: string | null
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_feedback_log_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
