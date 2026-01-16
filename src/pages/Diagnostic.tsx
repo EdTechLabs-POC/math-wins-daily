@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDiagnosticFlow } from '@/hooks/useDiagnosticFlow';
-import { useVoiceCompanion } from '@/hooks/useVoiceCompanion';
-import { useSoundEffects } from '@/hooks/useSoundEffects';
+import { useBackgroundMusic } from '@/hooks/useBackgroundMusic';
+import { useTutorFeedback } from '@/hooks/useTutorFeedback';
+import { useImmersiveSounds } from '@/hooks/useImmersiveSounds';
 import { CountingQuestion } from '@/components/diagnostic/CountingQuestion';
 import { TapCountQuestion } from '@/components/diagnostic/TapCountQuestion';
 import { DragDropQuestion } from '@/components/diagnostic/DragDropQuestion';
@@ -11,7 +12,7 @@ import { GroupedCountQuestion } from '@/components/diagnostic/GroupedCountQuesti
 import { RepairFlow } from '@/components/diagnostic/RepairFlow';
 import { DiagnosticResults } from '@/components/diagnostic/DiagnosticResults';
 import { Progress } from '@/components/ui/progress';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Music, Music2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Level1TaskA, Level1TaskB, Level2TaskA, Level2TaskB } from '@/types/diagnostic';
 
@@ -32,34 +33,56 @@ export default function Diagnostic() {
     isComplete
   } = useDiagnosticFlow();
 
-  const { say, isSpeaking } = useVoiceCompanion({
-    autoPlay: voiceEnabled,
-  });
-
-  const sounds = useSoundEffects();
+  // Audio hooks
+  const bgMusic = useBackgroundMusic();
+  const tutor = useTutorFeedback({ enabled: voiceEnabled });
+  const sounds = useImmersiveSounds();
 
   const currentTask = getCurrentTask();
+
+  // Start background music on first interaction
+  useEffect(() => {
+    const startMusic = () => {
+      if (!bgMusic.isPlaying) {
+        bgMusic.play();
+      }
+      document.removeEventListener('click', startMusic);
+    };
+    document.addEventListener('click', startMusic);
+    return () => document.removeEventListener('click', startMusic);
+  }, [bgMusic]);
 
   // Reset timer when task changes
   useEffect(() => {
     setStartTime(Date.now());
+    sounds.whoosh();
   }, [state.currentLevel, state.currentTask]);
 
   // Calculate progress
   const getProgress = () => {
     if (isComplete) return 100;
-    
     const levelProgress = state.currentLevel === 'level_1' ? 0 : 50;
     const taskProgress = state.currentTask === 'A' ? 0 : 25;
-    
     return levelProgress + taskProgress;
   };
 
   const handleVoicePrompt = useCallback((text: string) => {
     if (voiceEnabled) {
-      say(text, 'guiding');
+      tutor.introduceTask(text);
     }
-  }, [voiceEnabled, say]);
+  }, [voiceEnabled, tutor]);
+
+  const handleCorrectFeedback = useCallback(() => {
+    if (voiceEnabled) {
+      tutor.celebrateCorrect();
+    }
+  }, [voiceEnabled, tutor]);
+
+  const handleIncorrectFeedback = useCallback((correctAnswer: number | string) => {
+    if (voiceEnabled) {
+      tutor.encourageIncorrect(correctAnswer);
+    }
+  }, [voiceEnabled, tutor]);
 
   const handleAnswer = useCallback((answer: unknown, isCorrect: boolean) => {
     const timeTaken = Math.round((Date.now() - startTime) / 1000);
@@ -87,15 +110,15 @@ export default function Diagnostic() {
   }, [currentTask, startTime, attemptNumber, submitTaskResult]);
 
   const handleRepairComplete = useCallback(() => {
-    sounds.celebrate();
+    sounds.celebration();
     completeRepair();
     setAttemptNumber(1);
   }, [completeRepair, sounds]);
 
   const handleContinue = useCallback(() => {
-    // Navigate to practice sessions or dashboard
+    bgMusic.pause();
     navigate('/');
-  }, [navigate]);
+  }, [navigate, bgMusic]);
 
   const handleRetry = useCallback(() => {
     resetDiagnostic();
@@ -106,13 +129,19 @@ export default function Diagnostic() {
   const renderTask = () => {
     if (!currentTask) return null;
 
+    const commonProps = {
+      onVoicePrompt: handleVoicePrompt,
+      onCorrectFeedback: handleCorrectFeedback,
+      onIncorrectFeedback: handleIncorrectFeedback,
+    };
+
     switch (currentTask.type) {
       case 'count_objects':
         return (
           <CountingQuestion
             task={currentTask as Level1TaskA}
             onAnswer={handleAnswer}
-            onVoicePrompt={handleVoicePrompt}
+            {...commonProps}
           />
         );
       
@@ -121,7 +150,7 @@ export default function Diagnostic() {
           <TapCountQuestion
             task={currentTask as Level1TaskB}
             onAnswer={(ids, correct) => handleAnswer(ids, correct)}
-            onVoicePrompt={handleVoicePrompt}
+            {...commonProps}
           />
         );
       
@@ -130,7 +159,7 @@ export default function Diagnostic() {
           <DragDropQuestion
             task={currentTask as Level2TaskA}
             onAnswer={(matches, correct) => handleAnswer(matches, correct)}
-            onVoicePrompt={handleVoicePrompt}
+            {...commonProps}
           />
         );
       
@@ -139,7 +168,7 @@ export default function Diagnostic() {
           <GroupedCountQuestion
             task={currentTask as Level2TaskB}
             onAnswer={handleAnswer}
-            onVoicePrompt={handleVoicePrompt}
+            {...commonProps}
           />
         );
       
@@ -163,18 +192,37 @@ export default function Diagnostic() {
             </p>
           </div>
           
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setVoiceEnabled(!voiceEnabled)}
-            className="rounded-full"
-          >
-            {voiceEnabled ? (
-              <Volume2 className={`w-5 h-5 ${isSpeaking ? 'text-primary animate-pulse' : ''}`} />
-            ) : (
-              <VolumeX className="w-5 h-5 text-muted-foreground" />
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Background music toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={bgMusic.toggle}
+              className="rounded-full"
+              title={bgMusic.isPlaying ? 'Pause music' : 'Play music'}
+            >
+              {bgMusic.isPlaying ? (
+                <Music className="w-5 h-5 text-primary" />
+              ) : (
+                <MusicOff className="w-5 h-5 text-muted-foreground" />
+              )}
+            </Button>
+            
+            {/* Voice toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className="rounded-full"
+              title={voiceEnabled ? 'Mute voice' : 'Enable voice'}
+            >
+              {voiceEnabled ? (
+                <Volume2 className={`w-5 h-5 ${tutor.isSpeaking ? 'text-primary animate-pulse' : ''}`} />
+              ) : (
+                <VolumeX className="w-5 h-5 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
         </div>
         
         {/* Progress bar */}
