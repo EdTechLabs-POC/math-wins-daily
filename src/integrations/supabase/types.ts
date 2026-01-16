@@ -392,6 +392,7 @@ export type Database = {
     Functions: {
       check_tts_rate_limit: { Args: { p_user_id: string }; Returns: number }
       cleanup_old_tts_usage: { Args: never; Returns: undefined }
+      is_email_allowlisted: { Args: { p_email: string }; Returns: boolean }
       log_tts_usage: {
         Args: { p_character_count: number; p_user_id: string }
         Returns: undefined
