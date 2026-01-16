@@ -15,6 +15,8 @@ import { RepairFlow } from '@/components/diagnostic/RepairFlow';
 import { DiagnosticResults } from '@/components/diagnostic/DiagnosticResults';
 import { LevelAssessment } from '@/components/diagnostic/LevelAssessment';
 import { Progress } from '@/components/ui/progress';
+import { Slider } from '@/components/ui/slider';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Volume2, VolumeX, Music, Music2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Level1TaskA, Level1TaskB, Level2TaskA, Level2TaskB } from '@/types/diagnostic';
@@ -326,23 +328,54 @@ export default function Diagnostic() {
           </div>
           
           <div className="flex items-center gap-2">
-            {/* Background music toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={bgMusic.toggle}
-              className="rounded-full"
-              title={bgMusic.isLoading ? 'Generating music...' : bgMusic.isPlaying ? 'Pause music' : 'Play music'}
-              disabled={bgMusic.isLoading}
-            >
-              {bgMusic.isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              ) : bgMusic.isPlaying ? (
-                <Music className="w-5 h-5 text-primary" />
-              ) : (
-                <Music2 className="w-5 h-5 text-muted-foreground" />
-              )}
-            </Button>
+            {/* Background music toggle with volume slider */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  title={bgMusic.isLoading ? 'Loading music...' : bgMusic.isPlaying ? 'Music playing' : 'Play music'}
+                  disabled={bgMusic.isLoading}
+                >
+                  {bgMusic.isLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  ) : bgMusic.isPlaying ? (
+                    <Music className="w-5 h-5 text-primary animate-pulse" />
+                  ) : (
+                    <Music2 className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-4" align="end">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Music</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={bgMusic.toggle}
+                      className="h-7 px-2 text-xs"
+                    >
+                      {bgMusic.isPlaying ? 'Pause' : 'Play'}
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground">Volume</label>
+                    <Slider
+                      value={[bgMusic.volume * 100]}
+                      onValueChange={([value]) => bgMusic.setVolume(value / 100)}
+                      max={100}
+                      step={5}
+                      className="w-full"
+                    />
+                  </div>
+                  {bgMusic.error && (
+                    <p className="text-xs text-destructive">{bgMusic.error}</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             
             {/* Voice toggle */}
             <Button
