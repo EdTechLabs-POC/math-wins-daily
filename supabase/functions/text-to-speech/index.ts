@@ -73,20 +73,18 @@ serve(async (req) => {
       );
     }
 
-    // Use service role client for rate limiting operations
-    const serviceClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    );
-
-    // Check rate limit using database function
-    const { data: requestCount, error: rateLimitError } = await serviceClient
-      .rpc('check_tts_rate_limit', { p_user_id: user.id });
+    // Check rate limit using direct query with user's auth context (RLS enforced)
+    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+    const { count: requestCount, error: rateLimitError } = await supabase
+      .from('tts_usage')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gt('created_at', oneHourAgo);
 
     if (rateLimitError) {
       console.error("Rate limit check error:", rateLimitError);
       // Continue without rate limiting if check fails, but log it
-    } else if (requestCount >= RATE_LIMIT_PER_HOUR) {
+    } else if ((requestCount ?? 0) >= RATE_LIMIT_PER_HOUR) {
       console.warn(`User ${user.id} exceeded rate limit: ${requestCount} requests in last hour`);
       return new Response(
         JSON.stringify({ 
@@ -175,11 +173,12 @@ serve(async (req) => {
       throw new Error(`TTS failed: ${response.status}`);
     }
 
-    // Log successful TTS usage for rate limiting
-    const { error: logError } = await serviceClient
-      .rpc('log_tts_usage', { 
-        p_user_id: user.id, 
-        p_character_count: sanitizedText.length 
+    // Log successful TTS usage for rate limiting using direct insert with user's auth context (RLS enforced)
+    const { error: logError } = await supabase
+      .from('tts_usage')
+      .insert({ 
+        user_id: user.id, 
+        character_count: sanitizedText.length 
       });
 
     if (logError) {
