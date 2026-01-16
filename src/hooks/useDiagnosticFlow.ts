@@ -6,6 +6,14 @@ import type {
   DiagnosticTask 
 } from '@/types/diagnostic';
 
+// Import images from assets
+import birdsImage from '@/assets/diagnostic/birds.png';
+import applesImage from '@/assets/diagnostic/apples.png';
+import sticksImage from '@/assets/diagnostic/sticks.png';
+import dice1Image from '@/assets/diagnostic/dice_1.png';
+import dice2Image from '@/assets/diagnostic/dice_2.png';
+import dice3Image from '@/assets/diagnostic/dice_3.png';
+
 // Initial diagnostic tasks based on the PDF specification
 const DIAGNOSTIC_TASKS: Record<DiagnosticLevel, { A: DiagnosticTask; B: DiagnosticTask }> = {
   level_1: {
@@ -14,7 +22,7 @@ const DIAGNOSTIC_TASKS: Record<DiagnosticLevel, { A: DiagnosticTask; B: Diagnost
       taskId: 'L1_A',
       instruction: 'How many birds are sitting on the branch?',
       voicePrompt: 'Look at the picture. Can you count how many birds are sitting on the branch? Take your time!',
-      imageUrl: '/diagnostic/birds.png',
+      imageUrl: birdsImage,
       correctAnswer: 5,
       options: [
         { value: 4, label: 'Four' },
@@ -31,7 +39,7 @@ const DIAGNOSTIC_TASKS: Record<DiagnosticLevel, { A: DiagnosticTask; B: Diagnost
         id: `apple-${i}`,
         x: (i % 4) * 25 + 10,
         y: Math.floor(i / 4) * 30 + 10,
-        imageUrl: '/diagnostic/apple.png'
+        imageUrl: applesImage
       })),
       targetCount: 7
     }
@@ -48,9 +56,9 @@ const DIAGNOSTIC_TASKS: Record<DiagnosticLevel, { A: DiagnosticTask; B: Diagnost
         { value: 5, x: 0, y: 2 }
       ],
       objectGroups: [
-        { id: 'group-3', count: 3, imageUrl: '/diagnostic/dice_1.png' },
-        { id: 'group-4', count: 4, imageUrl: '/diagnostic/dice_2.png' },
-        { id: 'group-5', count: 5, imageUrl: '/diagnostic/dice_3.png' }
+        { id: 'group-3', count: 3, imageUrl: dice1Image },
+        { id: 'group-4', count: 4, imageUrl: dice2Image },
+        { id: 'group-5', count: 5, imageUrl: dice3Image }
       ]
     },
     B: {
@@ -61,7 +69,7 @@ const DIAGNOSTIC_TASKS: Record<DiagnosticLevel, { A: DiagnosticTask; B: Diagnost
       bundleCount: 1,
       looseCount: 3,
       bundleSize: 10,
-      imageUrl: '/diagnostic/sticks.png',
+      imageUrl: sticksImage,
       options: [
         { value: 10, label: '10' },
         { value: 12, label: '12' },
