@@ -204,7 +204,7 @@ export default function Diagnostic() {
               {bgMusic.isPlaying ? (
                 <Music className="w-5 h-5 text-primary" />
               ) : (
-                <MusicOff className="w-5 h-5 text-muted-foreground" />
+                <Music2 className="w-5 h-5 text-muted-foreground" />
               )}
             </Button>
             
